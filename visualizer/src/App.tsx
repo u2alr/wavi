@@ -62,7 +62,7 @@ export default function App() {
   const togglePanelCollapsed = useStore((s) => s.togglePanelCollapsed)
   const setActiveModal = useStore((s) => s.setActiveModal)
 
-  const [showUI, setShowUI] = useState(true)
+  const [, setShowUI] = useState(true)
   const [showStatusBar, setShowStatusBar] = useState(true)
   const [extensionStatus, setExtensionStatus] = useState('')
   const [openMenu, setOpenMenu] = useState<string | null>(null)
