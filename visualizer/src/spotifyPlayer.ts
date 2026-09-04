@@ -82,6 +82,7 @@ export async function ensureSpotifyPlayer(): Promise<string> {
       const t = await getAccessToken()
       cb(t ?? '')
     },
+    // We will initialize with 1.0; wait for App to sync it immediately via setSpotifyVolume.
     volume: 1.0,
   })
 
@@ -197,3 +198,10 @@ export function seekSpotify(positionMs: number): Promise<void> {
     method: 'PUT',
   })
 }
+
+export async function setSpotifyVolume(volume: number): Promise<void> {
+  if (player) {
+    await player.setVolume(Math.max(0, Math.min(1, volume)))
+  }
+}
+

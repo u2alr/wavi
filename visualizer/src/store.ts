@@ -25,6 +25,7 @@ export interface VisualizerMetrics {
   mid: number
   treble: number
   overall: number
+  sourceMode: 'live' | 'estimated' | 'idle'
 }
 
 interface Store {
@@ -45,14 +46,23 @@ interface Store {
   playbackPosition: number
   playbackDuration: number
   metrics: VisualizerMetrics
+  volume: number
+  isPanelCollapsed: boolean
+  isMiniPlayer: boolean
+  activeModal: 'help' | 'shortcuts' | null
 
   setCurrentPreset: (p: string) => void
   setParam: <K extends keyof PresetParams>(key: K, value: PresetParams[K]) => void
   setParams: (p: PresetParams) => void
+  resetParams: () => void
   setPlaylist: (files: File[]) => void
   setCurrentTrackIndex: (i: number) => void
   setTrackName: (name: string) => void
   setIsFullscreen: (fs: boolean) => void
+  togglePanelCollapsed: () => void
+  setPanelCollapsed: (collapsed: boolean) => void
+  setIsMiniPlayer: (mini: boolean) => void
+  setActiveModal: (modal: 'help' | 'shortcuts' | null) => void
   setSpotifyAuthed: (b: boolean) => void
   setSpotifyUser: (u: SpotifyUser | null) => void
   setSpotifyPlaylists: (p: SpotifyPlaylist[]) => void
@@ -65,6 +75,7 @@ interface Store {
   savePreset: (name: string) => void
   loadPreset: (id: string) => void
   deletePreset: (id: string) => void
+  setVolume: (v: number) => void
 }
 
 const DEFAULT_PARAMS: PresetParams = {
@@ -89,7 +100,7 @@ function persistPresets(presets: SavedPreset[]) {
 }
 
 export const useStore = create<Store>((set, get) => ({
-  currentPreset: 'spectrum',
+  currentPreset: 'mellowDrift',
   params: { ...DEFAULT_PARAMS },
   playlist: [],
   currentTrackIndex: -1,
@@ -103,15 +114,25 @@ export const useStore = create<Store>((set, get) => ({
   spotifyCurrentTrack: null,
   playbackPosition: 0,
   playbackDuration: 0,
-  metrics: { fps: 0, bass: 0, mid: 0, treble: 0, overall: 0 },
+  metrics: { fps: 0, bass: 0, mid: 0, treble: 0, overall: 0, sourceMode: 'idle' as const },
   isFullscreen: false,
+  isPanelCollapsed: false,
+  isMiniPlayer: false,
+  activeModal: null,
   savedPresets: loadSavedPresets(),
+  volume: 1.0,
 
   setCurrentPreset: (p) => set({ currentPreset: p }),
   setParam: (key, value) => set((s) => ({ params: { ...s.params, [key]: value } })),
   setParams: (p) => set({ params: p }),
+  resetParams: () => set({ params: { ...DEFAULT_PARAMS } }),
   setPlaylist: (files) => set({ playlist: files }),
   setCurrentTrackIndex: (i) => set({ currentTrackIndex: i }),
+  setIsFullscreen: (fs) => set({ isFullscreen: fs }),
+  togglePanelCollapsed: () => set((s) => ({ isPanelCollapsed: !s.isPanelCollapsed })),
+  setPanelCollapsed: (collapsed) => set({ isPanelCollapsed: collapsed }),
+  setIsMiniPlayer: (mini) => set({ isMiniPlayer: mini }),
+  setActiveModal: (modal) => set({ activeModal: modal }),
   setSpotifyAuthed: (b) => set({ isSpotifyAuthed: b }),
   setSpotifyUser: (u) => set({ spotifyUser: u }),
   setSpotifyPlaylists: (p) => set({ spotifyPlaylists: p }),
@@ -122,7 +143,7 @@ export const useStore = create<Store>((set, get) => ({
   setPlaybackProgress: (position, duration) => set({ playbackPosition: position, playbackDuration: duration }),
   setMetrics: (metrics) => set({ metrics }),
   setTrackName: (name) => set({ trackName: name }),
-  setIsFullscreen: (fs) => set({ isFullscreen: fs }),
+  setVolume: (v) => set({ volume: v }),
 
   savePreset: (name) => {
     const { currentPreset, params, savedPresets } = get()

@@ -25,12 +25,13 @@ export function parseLRC(lrc: string): LyricLine[] {
   return lines
 }
 
-async function trySpotify(id?: string): Promise<LyricLine[] | null> {
+async function trySpotify(id?: string, signal?: AbortSignal): Promise<LyricLine[] | null> {
   const token = getAccessToken()
   if (!id || !token) return null
   try {
     const res = await fetch(`https://spclient.wg.spotify.com/color-lyrics/v2/track/${id}?format=json&market=from_token`, {
       headers: { Authorization: `Bearer ${token}`, 'app-platform': 'WebPlayer' },
+      signal,
     })
     if (!res.ok) return null
     const data = await res.json()
@@ -40,16 +41,16 @@ async function trySpotify(id?: string): Promise<LyricLine[] | null> {
     for (let i = 0; i < lines.length - 1; i++) lines[i].end = lines[i + 1].start
     lines[lines.length - 1].end += 10
     return lines
-  } catch { return null } // CORS block -> fall through
+  } catch { return null } // CORS block / abort -> fall through
 }
 
-async function tryLrclib(meta: TrackMeta): Promise<LyricLine[] | null> {
+async function tryLrclib(meta: TrackMeta, signal?: AbortSignal): Promise<LyricLine[] | null> {
   const urls = []
   if (meta.isrc) urls.push(`https://lrclib.net/api/get?isrc=${encodeURIComponent(meta.isrc)}`)
   urls.push(`https://lrclib.net/api/get?artist_name=${encodeURIComponent(meta.artist || '')}&track_name=${encodeURIComponent(meta.title)}`)
   for (const url of urls) {
     try {
-      const res = await fetch(url)
+      const res = await fetch(url, { signal })
       if (!res.ok) continue
       const data = await res.json()
       if (data?.syncedLyrics) return parseLRC(data.syncedLyrics)
@@ -57,15 +58,15 @@ async function tryLrclib(meta: TrackMeta): Promise<LyricLine[] | null> {
         const plain = data.plainLyrics.split('\n').filter(Boolean)
         return plain.map((text: string, i: number) => ({ start: i * 6, end: i * 6 + 6, text }))
       }
-    } catch { /* next */ }
+    } catch { /* next / aborted */ }
   }
   return null
 }
 
-export async function fetchLyrics(meta: TrackMeta): Promise<{ lines: LyricLine[]; source: string } | null> {
-  const sp = await trySpotify(meta.id)
+export async function fetchLyrics(meta: TrackMeta, signal?: AbortSignal): Promise<{ lines: LyricLine[]; source: string } | null> {
+  const sp = await trySpotify(meta.id, signal)
   if (sp) return { lines: sp, source: 'spotify' }
-  const lr = await tryLrclib(meta)
+  const lr = await tryLrclib(meta, signal)
   if (lr) return { lines: lr, source: 'lrclib' }
   return null
 }

@@ -3,6 +3,8 @@ import { useState, useRef, useEffect } from 'react'
 /**
  * Self-contained playback time tracker.
  * Counts elapsed time internally instead of relying on Spotify SDK events.
+ * Uses requestAnimationFrame so it auto-pauses when the tab is hidden and
+ * stays synced with the render clock.
  * - Starts counting when `playing` becomes true
  * - Pauses when `playing` becomes false
  * - Resets when `trackId` changes
@@ -13,7 +15,8 @@ export function usePlaybackTracker(playing: boolean, trackId: string | null, dur
   const accumulatedRef = useRef(0)   // ms accumulated before current play session
   const startTimeRef = useRef(0)     // timestamp (ms) when current session started
   const lastTrackIdRef = useRef<string | null>(null)
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const rafRef = useRef<number>(0)
+  const lastEmittedRef = useRef(0)   // last emitted currentTime value
 
   // Reset on track change
   useEffect(() => {
@@ -21,34 +24,44 @@ export function usePlaybackTracker(playing: boolean, trackId: string | null, dur
       lastTrackIdRef.current = trackId
       accumulatedRef.current = 0
       startTimeRef.current = 0
+      lastEmittedRef.current = 0
       setCurrentTime(0)
     }
   }, [trackId])
 
-  // Start/stop tracking based on playing state
+  // RAF-based tracking loop — auto-pauses when tab is hidden
   useEffect(() => {
-    if (playing && trackId) {
-      startTimeRef.current = Date.now()
-      intervalRef.current = setInterval(() => {
-        const elapsed = Date.now() - startTimeRef.current
-        setCurrentTime(accumulatedRef.current + elapsed)
-      }, 100)
-    } else {
-      // Paused — freeze the accumulated time
+    if (!playing || !trackId) {
+      // Freeze accumulated time when paused
       if (startTimeRef.current > 0) {
         accumulatedRef.current += Date.now() - startTimeRef.current
         startTimeRef.current = 0
       }
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current)
-        intervalRef.current = null
-      }
+      cancelAnimationFrame(rafRef.current)
+      return
     }
 
+    startTimeRef.current = Date.now()
+
+    const tick = () => {
+      const elapsed = Date.now() - startTimeRef.current
+      const next = accumulatedRef.current + elapsed
+      // Only update state when time has changed by >50ms to avoid excessive re-renders
+      if (Math.abs(next - lastEmittedRef.current) >= 50) {
+        lastEmittedRef.current = next
+        setCurrentTime(next)
+      }
+      rafRef.current = requestAnimationFrame(tick)
+    }
+
+    rafRef.current = requestAnimationFrame(tick)
+
     return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current)
-        intervalRef.current = null
+      cancelAnimationFrame(rafRef.current)
+      // Freeze accumulated time on cleanup
+      if (startTimeRef.current > 0) {
+        accumulatedRef.current += Date.now() - startTimeRef.current
+        startTimeRef.current = 0
       }
     }
   }, [playing, trackId])

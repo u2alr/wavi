@@ -20,34 +20,47 @@ export default function BratLyrics({ active }: { active: boolean }) {
     track?.duration_ms ?? 0
   )
 
-  // fetch lyrics on track change
+  // Fetch lyrics on track change — use AbortController to cancel stale requests
   useEffect(() => {
-    let cancel = false
-    setLines([]); setIdx(-1)
+    const controller = new AbortController()
     base.current = { pos: 0, at: performance.now() }
     const meta = track
       ? { title: track.name, artist: track.artists?.[0]?.name, id: track.id }
       : guessFromName(trackName)
-    if (!meta.title) return
-    fetchLyrics(meta).then((res) => {
-      if (cancel) return
-      if (res) setLines(res.lines)
-    })
-    return () => { cancel = true }
+
+    if (!meta.title) {
+      setLines([])
+      setIdx(-1)
+      return () => controller.abort()
+    }
+
+    fetchLyrics(meta, controller.signal).then((res) => {
+      if (controller.signal.aborted) return
+      setLines(res ? res.lines : [])
+      setIdx(-1)
+    }).catch(() => { /* aborted */ })
+
+    return () => controller.abort()
   }, [track, trackName])
 
-  // line sync loop — uses the same internal clock as the progress bar
+  // Line sync loop — only runs RAF when preset is active
   useEffect(() => {
-    const t = setInterval(() => {
+    if (!active) return
+
+    let rafId = 0
+    const tick = () => {
       const audio = getAudioElement()
       const pos = track
         ? base.current.pos + (playing ? performance.now() - base.current.at : 0) / 1000
         : audio?.currentTime ?? base.current.pos
-      if (track ? !playing : audio?.paused) return
-      setIdx(lines.findIndex((l) => pos >= l.start && pos < l.end))
-    }, 100)
-    return () => clearInterval(t)
-  }, [lines, playing, track])
+      if (!(track ? !playing : audio?.paused)) {
+        setIdx(lines.findIndex((l) => pos >= l.start && pos < l.end))
+      }
+      rafId = requestAnimationFrame(tick)
+    }
+    rafId = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(rafId)
+  }, [active, lines, playing, track])
 
   const bass = metrics?.bass ?? 0
   const blur = `blur(${(1.1 + bass * 1.8).toFixed(2)}px)`

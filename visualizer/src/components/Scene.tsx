@@ -317,7 +317,11 @@ function ActivePreset() {
 
 export default function Scene() {
   return (
-    <Canvas camera={{ position: [0, 0, 6], fov: 55 }}>
+    <Canvas
+      camera={{ position: [0, 0, 6], fov: 55 }}
+      dpr={[1, 1.5]}
+      gl={{ antialias: false, powerPreference: 'high-performance', depth: false, stencil: false }}
+    >
       <color attach="background" args={['#020308']} />
       <ambientLight intensity={0.9} />
       <pointLight position={[3, 4, 5]} intensity={1.1} />

@@ -1,8 +1,11 @@
 let audioContext: AudioContext | null = null
 let analyser: AnalyserNode | null = null
+let gainNode: GainNode | null = null
 let source: MediaElementAudioSourceNode | MediaStreamAudioSourceNode | null = null
 let audioElement: HTMLAudioElement | null = null
 const freqData = new Uint8Array(256)
+// Frame-stamp cache: only call getByteFrequencyData once per animation frame
+let lastFillTime = -1
 let extensionFreqData: Uint8Array | null = null
 
 // When true (Spotify Web Playback SDK is the source), generate a gentle
@@ -54,6 +57,7 @@ export function initAudio(file: File): HTMLAudioElement {
     analyser = audioContext.createAnalyser()
     analyser.fftSize = 512
     analyser.smoothingTimeConstant = 0.8
+    gainNode = audioContext.createGain()
   }
 
   if (audioElement) {
@@ -73,7 +77,10 @@ export function initAudio(file: File): HTMLAudioElement {
 
   source = audioContext.createMediaElementSource(audioElement)
   source.connect(analyser)
-  analyser.connect(audioContext.destination)
+  if (gainNode) {
+    analyser.connect(gainNode)
+    gainNode.connect(audioContext.destination)
+  }
 
   audioElement.play()
   return audioElement
@@ -87,6 +94,7 @@ export function initAudioFromStream(stream: MediaStream): void {
     analyser = audioContext.createAnalyser()
     analyser.fftSize = 512
     analyser.smoothingTimeConstant = 0.8
+    gainNode = audioContext.createGain()
   }
   if (!audioContext || !analyser) throw new Error('Failed to initialize audio context')
   if (source) source.disconnect()
@@ -101,13 +109,26 @@ export function initAudioFromStream(stream: MediaStream): void {
   })
 }
 
+/** Fill freqData from the analyser, at most once per animation frame. */
+function fillFreqData() {
+  if (extensionFreqData) {
+    freqData.set(extensionFreqData)
+    return
+  }
+  if (!analyser) return
+  const now = performance.now()
+  if (now - lastFillTime < 1) return // already read this frame
+  lastFillTime = now
+  analyser.getByteFrequencyData(freqData)
+}
+
 export function getAudioBands() {
   if (extensionFreqData) freqData.set(extensionFreqData)
   if (ambientMode) return ambientBands()
   if (!analyser) {
     return { bass: 0.05, mid: 0.03, treble: 0.02, overall: 0.03 }
   }
-  analyser.getByteFrequencyData(freqData)
+  fillFreqData()
 
   let bass = 0, mid = 0, treble = 0
   const len = freqData.length
@@ -144,7 +165,7 @@ export function getFreqData(): Uint8Array {
     }
     return freqData
   }
-  if (analyser) analyser.getByteFrequencyData(freqData)
+  fillFreqData()
   return freqData
 }
 
@@ -157,4 +178,10 @@ export function getAudioSourceMode(): 'live' | 'estimated' | 'idle' {
   if (ambientMode) return 'estimated'
   if (analyser) return 'live'
   return 'idle'
+}
+
+export function setAudioVolume(volume: number) {
+  if (gainNode) {
+    gainNode.gain.value = Math.max(0, Math.min(1, volume))
+  }
 }

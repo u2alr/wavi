@@ -37,7 +37,7 @@ export default function SpotifyAuth() {
       style={{ width: '100%', marginBottom: 6, fontWeight: 'bold', color: '#1DB954' }}
       onClick={() => { startSpotifyAuth().catch(console.error) }}
     >
-      ♪ Connect Spotify
+      Connect Spotify
     </button>
   )
 }

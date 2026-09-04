@@ -196,8 +196,12 @@ export default function SpotifyPanel() {
             <option key={p.id} value={p.id}>{p.name}</option>
           ))}
         </select>
-        <button className="xp-btn" onClick={loadPlaylists} disabled={loading}>
-          ⟳
+        <button className="xp-btn" onClick={loadPlaylists} disabled={loading} title="Refresh Playlists">
+          <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M23 4v6h-6" />
+            <path d="M1 20v-6h6" />
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+          </svg>
         </button>
       </div>
 
@@ -216,7 +220,11 @@ export default function SpotifyPanel() {
         <div className="spotify-track-list spotify-search-results">
           {searchResults.map((track) => (
             <div key={track.id} className="spotify-track" onClick={() => playSearchResult(track)}>
-              <span className="spotify-track-index">▶</span>
+              <span className="spotify-track-index">
+                <svg viewBox="0 0 24 24" width="8" height="8" fill="currentColor">
+                  <polygon points="6 4 20 12 6 20 6 4" />
+                </svg>
+              </span>
               <div className="spotify-track-meta">
                 <div className="spotify-track-title">{track.name}</div>
                 <div className="spotify-track-artist">{track.artists.map((artist) => artist.name).join(', ')}</div>
@@ -227,9 +235,30 @@ export default function SpotifyPanel() {
       )}
 
       <div className="spotify-controls">
-        <button className="xp-btn" onClick={() => previousSpotify().catch(fail)}>⏮</button>
-        <button className="xp-btn" onClick={togglePlay}>{playing ? '⏸' : '▶'}</button>
-        <button className="xp-btn" onClick={() => nextSpotify().catch(fail)}>⏭</button>
+        <button className="xp-btn" onClick={() => previousSpotify().catch(fail)} title="Previous">
+          <svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor">
+            <polygon points="19 20 9 12 19 4 19 20" />
+            <rect x="5" y="4" width="2.5" height="16" />
+          </svg>
+        </button>
+        <button className="xp-btn" onClick={togglePlay} title={playing ? 'Pause' : 'Play'}>
+          {playing ? (
+            <svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor">
+              <rect x="5" y="4" width="4" height="16" />
+              <rect x="15" y="4" width="4" height="16" />
+            </svg>
+          ) : (
+            <svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor">
+              <polygon points="6 4 20 12 6 20 6 4" />
+            </svg>
+          )}
+        </button>
+        <button className="xp-btn" onClick={() => nextSpotify().catch(fail)} title="Next">
+          <svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor">
+            <polygon points="5 4 15 12 5 20 5 4" />
+            <rect x="16.5" y="4" width="2.5" height="16" />
+          </svg>
+        </button>
       </div>
       {error && <div className="spotify-error">{error}</div>}
 
