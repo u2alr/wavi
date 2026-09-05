@@ -10,11 +10,8 @@ import {
   getAudioElement,
   getAudioSourceMode,
   initAudio,
-  initAudioFromStream,
-  setAmbientMode,
   setAudioVolume,
   setExtensionAudioData,
-  setSpotifyPlaybackState,
 } from './audio'
 import {
   getPendingTrackId,
@@ -29,8 +26,9 @@ import {
 import { exchangeCodeForToken, getSpotifyUser, loadTokens } from './spotify'
 import BratLyrics from './components/BratLyrics'
 import StatusBar from './components/StatusBar'
+import ExtensionBadge from './components/ExtensionBadge'
 
-const PRESET_TYPES = ['mellowDrift', 'prismaticGarden', 'auroraSilk', 'brat']
+const PRESET_TYPES = ['mellowDrift', 'prismaticGarden', 'auroraSilk', 'liquidDrift', 'arcticSwirl', 'laserSilk', 'sonarBloom', 'pastels', 'brat']
 
 export default function App() {
   const fileRef = useRef<HTMLInputElement>(null)
@@ -63,7 +61,7 @@ export default function App() {
   const setActiveModal = useStore((s) => s.setActiveModal)
 
   const [, setShowUI] = useState(true)
-  const [showStatusBar, setShowStatusBar] = useState(true)
+  const [showStatusBar, setShowStatusBar] = useState(false)
   const [extensionStatus, setExtensionStatus] = useState('')
   const [openMenu, setOpenMenu] = useState<string | null>(null)
   const [metricVisibility, setMetricVisibility] = useState({
@@ -130,25 +128,46 @@ export default function App() {
     }
   }, [setSpotifyAuthed, setSpotifyUser])
 
-  // Spotify SDK State Listener
+  // Spotify SDK State Listener — always sync from the SDK event so a
+  // naturally-ending song advances NowPlaying + lyrics even when the next
+  // track isn't in our loaded list.
   useEffect(() => {
     setSpotifyStateListener((state) => {
-      const currentId = state.track_window.current_track.id
+      const store = useStore.getState()
+      if (!state) {
+        store.setSpotifyPlaying(false)
+        return
+      }
+      const sdkTrack = state.track_window.current_track
+      const currentId = sdkTrack.id
       const pending = getPendingTrackId()
       if (pending && pending !== currentId) return
       if (pending === currentId) setPendingTrackId(null)
 
-      const store = useStore.getState()
       const isPlaying = !state.paused
       store.setSpotifyPlaying(isPlaying)
-      setSpotifyPlaybackState(isPlaying, state.position, state.duration)
       setPlaybackProgress(state.position, state.duration)
-      const track = store.spotifyTracks.find((item) => item.id === currentId)
-      if (track) {
-        store.setSpotifyCurrentTrack(track)
-        store.setSpotifyIndex(store.spotifyTracks.indexOf(track))
+      const idx = store.spotifyTracks.findIndex((item) => item.id === currentId)
+      if (idx >= 0) {
+        store.setSpotifyCurrentTrack(store.spotifyTracks[idx])
+        store.setSpotifyIndex(idx)
+      } else {
+        // Track advanced outside our loaded list (e.g. natural queue
+        // advance) — build a minimal record from SDK data so the player
+        // bar and lyrics update instead of showing the previous song.
+        store.setSpotifyCurrentTrack({
+          id: sdkTrack.id,
+          name: sdkTrack.name,
+          uri: sdkTrack.uri,
+          duration_ms: sdkTrack.duration_ms ?? state.duration,
+          album: sdkTrack.album
+            ? { id: sdkTrack.album.name ?? '', name: sdkTrack.album.name ?? '', images: sdkTrack.album.images ?? [] }
+            : { id: '', name: '', images: [] },
+          artists: (sdkTrack.artists ?? []).map((a: { name: string }) => ({ id: a.name, name: a.name })),
+        })
+        store.setSpotifyIndex(-1)
       }
-      store.setTrackName(state.track_window.current_track.name)
+      store.setTrackName(sdkTrack.name)
     })
   }, [setPlaybackProgress])
 
@@ -199,11 +218,26 @@ export default function App() {
   const playTrack = useCallback(
     (index: number) => {
       if (index < 0 || index >= playlist.length) return
-      setAmbientMode(false)
       setSpotifyPlaying(false)
       setCurrentTrackIndex(index)
       const file = playlist[index]
-      initAudio(file)
+      const audio = initAudio(file)
+      // Auto-advance local files when a song naturally ends so the player
+      // bar and lyrics move to the next song instead of going stale.
+      audio.onended = () => {
+        const s = useStore.getState()
+        const nxt = s.currentTrackIndex + 1
+        if (nxt < s.playlist.length) {
+          const nextFile = s.playlist[nxt]
+          s.setCurrentTrackIndex(nxt)
+          const nextAudio = initAudio(nextFile)
+          nextAudio.onended = audio.onended
+          s.setTrackName(nextFile.name.replace(/\.[^/.]+$/, ''))
+        } else {
+          s.setTrackName('')
+          s.setCurrentTrackIndex(-1)
+        }
+      }
       setTrackName(file.name.replace(/\.[^/.]+$/, ''))
     },
     [playlist, setCurrentTrackIndex, setSpotifyPlaying, setTrackName]
@@ -213,11 +247,24 @@ export default function App() {
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = Array.from(e.target.files || [])
       if (files.length === 0) return
-      setAmbientMode(false)
       setSpotifyPlaying(false)
       setPlaylist(files)
       setCurrentTrackIndex(0)
-      initAudio(files[0])
+      const audio = initAudio(files[0])
+      audio.onended = () => {
+        const s = useStore.getState()
+        const nxt = s.currentTrackIndex + 1
+        if (nxt < s.playlist.length) {
+          const nextFile = s.playlist[nxt]
+          s.setCurrentTrackIndex(nxt)
+          const nextAudio = initAudio(nextFile)
+          nextAudio.onended = audio.onended
+          s.setTrackName(nextFile.name.replace(/\.[^/.]+$/, ''))
+        } else {
+          s.setTrackName('')
+          s.setCurrentTrackIndex(-1)
+        }
+      }
       setTrackName(files[0].name.replace(/\.[^/.]+$/, ''))
       if (fileRef.current) fileRef.current.value = ''
     },
@@ -265,17 +312,6 @@ export default function App() {
     clearExtensionAudioData()
     setTrackName('')
   }, [spotifyCurrentTrack, setSpotifyPlaying, setTrackName])
-
-  const handleLiveMic = useCallback(async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      initAudioFromStream(stream)
-      setTrackName('Live Microphone / Line In')
-    } catch (err) {
-      console.error('Microphone access failed:', err)
-      alert('Could not access microphone: ' + (err instanceof Error ? err.message : String(err)))
-    }
-  }, [setTrackName])
 
   // Native fullscreen changes listener
   useEffect(() => {
@@ -392,47 +428,21 @@ export default function App() {
       className={`xp-window ${isFullscreen ? 'fullscreen' : ''} ${isMiniPlayer ? 'mini-player' : ''
         }`}
     >
-      {/* WINDOW TITLE BAR */}
+      {/* WINDOW CHROME — one continuous translucent material */}
       {!isFullscreen && (
-        <>
+        <div className="window-chrome">
           <div className="title-bar">
+            <div className="traffic-lights" aria-hidden="true">
+              <span className="traffic-light red" />
+              <span className="traffic-light yellow" />
+              <span className="traffic-light green" />
+            </div>
             <div className="title-bar-text">
-              <div className="title-icon" />
               <span>
-                Visualizer.exe {isMiniPlayer ? '· Mini Player' : ''} - [
-                {trackName || 'Ready'}
-                ]
+                wavi.lol — {trackName || (isMiniPlayer ? 'Mini Player' : 'Ready')}
               </span>
             </div>
-            <div className="window-controls">
-              <div
-                className="win-btn btn-min"
-                onClick={() => setIsMiniPlayer(!isMiniPlayer)}
-                role="button"
-                tabIndex={0}
-                title={isMiniPlayer ? 'Restore Window (Esc)' : 'Minimize to Mini Player'}
-              >
-                {isMiniPlayer ? '[ ]' : '_'}
-              </div>
-              <div
-                className="win-btn btn-max"
-                onClick={toggleFS}
-                role="button"
-                tabIndex={0}
-                title="Fullscreen (F)"
-              >
-                [ ]
-              </div>
-              <div
-                className="win-btn btn-close"
-                onClick={handleResetPlayback}
-                role="button"
-                tabIndex={0}
-                title="Stop / Reset"
-              >
-                X
-              </div>
-            </div>
+            <div className="title-bar-spacer" aria-hidden="true" />
           </div>
 
           {/* INTERACTIVE MENU BAR */}
@@ -457,15 +467,6 @@ export default function App() {
                     >
                       <span>Open Local Audio Files...</span>
                       <span className="shortcut-hint">Ctrl+O</span>
-                    </div>
-                    <div
-                      className="dropdown-item"
-                      onClick={() => {
-                        handleLiveMic()
-                        setOpenMenu(null)
-                      }}
-                    >
-                      <span>Use Live Microphone / Line In</span>
                     </div>
                     <div className="dropdown-divider" />
                     <div
@@ -560,7 +561,17 @@ export default function App() {
                               ? 'Prismatic Garden (Petals)'
                               : type === 'auroraSilk'
                                 ? 'Aurora Silk (Ribbons)'
-                                : 'brat (Typography)'}
+                                : type === 'liquidDrift'
+                                  ? 'Liquid Drift (Mercury)'
+                                  : type === 'arcticSwirl'
+                                    ? 'Arctic Swirl (Whirlpool)'
+                                    : type === 'laserSilk'
+                                      ? 'Laser Silk (Contours)'
+                                      : type === 'sonarBloom'
+                                        ? 'Sonar Bloom (Ripples)'
+                                        : type === 'pastels'
+                                          ? 'Pastels (Laser Threads)'
+                                          : 'brat (Typography)'}
                         </span>
                       </div>
                     ))}
@@ -671,9 +682,16 @@ export default function App() {
                   </div>
                 )}
               </div>
+
+              {/* EXTENSION STATUS — pinned right */}
+              <ExtensionBadge
+                status={extensionStatus}
+                open={openMenu === 'extension'}
+                onToggle={() => setOpenMenu(openMenu === 'extension' ? null : 'extension')}
+              />
             </div>
           )}
-        </>
+        </div>
       )}
 
 
@@ -693,7 +711,7 @@ export default function App() {
 
         {/* Collapsible Control Panel */}
         {!isFullscreen && !isMiniPlayer && (
-          <ControlPanel onLoadFiles={() => fileRef.current?.click()} />
+          <ControlPanel />
         )}
       </div>
 

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 
 /**
  * Self-contained playback time tracker.
@@ -8,6 +8,8 @@ import { useState, useRef, useEffect } from 'react'
  * - Starts counting when `playing` becomes true
  * - Pauses when `playing` becomes false
  * - Resets when `trackId` changes
+ * - `resync(ms)` jumps the clock (seek confirmations, SDK corrections,
+ *   optimistic seeks) without changing play state.
  */
 export function usePlaybackTracker(playing: boolean, trackId: string | null, durationMs: number) {
   const [currentTime, setCurrentTime] = useState(0) // ms
@@ -17,6 +19,25 @@ export function usePlaybackTracker(playing: boolean, trackId: string | null, dur
   const lastTrackIdRef = useRef<string | null>(null)
   const rafRef = useRef<number>(0)
   const lastEmittedRef = useRef(0)   // last emitted currentTime value
+  const durationRef = useRef(durationMs)
+  useEffect(() => {
+    durationRef.current = durationMs
+  }, [durationMs])
+
+  const clamp = useCallback((ms: number) => {
+    const d = durationRef.current
+    if (d > 0) return Math.max(0, Math.min(ms, d))
+    return Math.max(0, ms)
+  }, [])
+
+  /** Jump the clock to `ms` (seek / SDK correction). Keeps play state. */
+  const resync = useCallback((ms: number) => {
+    const clamped = clamp(ms)
+    accumulatedRef.current = clamped
+    lastEmittedRef.current = clamped
+    if (startTimeRef.current > 0) startTimeRef.current = Date.now()
+    setCurrentTime(clamped)
+  }, [clamp])
 
   // Reset on track change
   useEffect(() => {
@@ -34,7 +55,7 @@ export function usePlaybackTracker(playing: boolean, trackId: string | null, dur
     if (!playing || !trackId) {
       // Freeze accumulated time when paused
       if (startTimeRef.current > 0) {
-        accumulatedRef.current += Date.now() - startTimeRef.current
+        accumulatedRef.current = clamp(accumulatedRef.current + Date.now() - startTimeRef.current)
         startTimeRef.current = 0
       }
       cancelAnimationFrame(rafRef.current)
@@ -45,7 +66,7 @@ export function usePlaybackTracker(playing: boolean, trackId: string | null, dur
 
     const tick = () => {
       const elapsed = Date.now() - startTimeRef.current
-      const next = accumulatedRef.current + elapsed
+      const next = clamp(accumulatedRef.current + elapsed)
       // Only update state when time has changed by >50ms to avoid excessive re-renders
       if (Math.abs(next - lastEmittedRef.current) >= 50) {
         lastEmittedRef.current = next
@@ -60,13 +81,13 @@ export function usePlaybackTracker(playing: boolean, trackId: string | null, dur
       cancelAnimationFrame(rafRef.current)
       // Freeze accumulated time on cleanup
       if (startTimeRef.current > 0) {
-        accumulatedRef.current += Date.now() - startTimeRef.current
+        accumulatedRef.current = clamp(accumulatedRef.current + Date.now() - startTimeRef.current)
         startTimeRef.current = 0
       }
     }
-  }, [playing, trackId])
+  }, [playing, trackId, clamp])
 
   const progress = durationMs > 0 ? Math.min(100, (currentTime / durationMs) * 100) : 0
 
-  return { currentTime, progress, durationMs }
+  return { currentTime, progress, durationMs, resync }
 }

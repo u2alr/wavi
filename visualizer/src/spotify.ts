@@ -144,7 +144,10 @@ async function postToken(body: URLSearchParams): Promise<SpotifyTokens> {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body,
   })
-  if (!res.ok) throw new Error(`Token request failed (${res.status})`)
+  if (!res.ok) {
+    console.error(`Spotify token request failed (${res.status})`)
+    throw new Error("Couldn't sign in with Spotify. Try connecting again.")
+  }
   const data = await res.json()
   return {
     access_token: data.access_token,
@@ -182,19 +185,33 @@ export async function spotifyApi<T>(path: string, init?: RequestInit): Promise<T
   })
   if (res.status === 401) {
     clearTokens()
-    throw new Error('Spotify session expired')
+    throw new Error('Your Spotify session expired. Reconnect and try again.')
   }
   if (res.status === 204) return undefined as T
   if (!res.ok) {
     const detail = await res.text()
-    throw new Error(`Spotify API error (${res.status})${detail ? `: ${detail}` : ''}`)
+    console.error(`Spotify API error (${res.status})${detail ? `: ${detail}` : ''}`)
+    if (res.status === 429) {
+      throw new Error("Spotify is rate-limiting us. Wait a moment, then tap Retry.")
+    }
+    if (res.status >= 500) {
+      throw new Error("Spotify's servers hiccuped. Tap Retry in a moment.")
+    }
+    if (res.status === 403) {
+      throw new Error('Spotify refused that request. A Premium account may be required.')
+    }
+    throw new Error("Couldn't reach Spotify. Check your connection and tap Retry.")
   }
   const body = await res.text()
   if (!body.trim()) return undefined as T
   try {
     return JSON.parse(body) as T
   } catch {
-    throw new Error(`Spotify returned an invalid response (${res.status})`)
+    // Some player endpoints answer 2xx with a plain-text body (e.g. an
+    // echoed device id). The request succeeded, so hand the raw text back
+    // instead of failing the whole action.
+    console.warn(`Spotify returned non-JSON success body (${res.status}): ${body.slice(0, 200)}`)
+    return body as unknown as T
   }
 }
 

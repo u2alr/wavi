@@ -18,28 +18,25 @@ export default function AboutModal() {
         <div className="title-bar dialog-title-bar">
           <div className="title-bar-text">
             <span className="dialog-icon">i</span>
-            <span id="dialog-title">About Visualizer.exe &amp; Shortcuts</span>
+            <span id="dialog-title">About wavi.lol &amp; Shortcuts</span>
           </div>
-          <div className="window-controls">
-            <div
-              className="win-btn btn-close"
-              onClick={() => setActiveModal(null)}
-              role="button"
-              tabIndex={0}
-              title="Close"
-            >
-              ✕
-            </div>
-          </div>
+          <button
+            className="modal-close-btn"
+            onClick={() => setActiveModal(null)}
+            title="Close"
+            aria-label="Close dialog"
+          >
+            ✕
+          </button>
         </div>
 
         <div className="dialog-body">
           <div className="dialog-header-banner">
-            <div className="dialog-logo">V</div>
+            <div className="dialog-logo">w</div>
             <div>
-              <h3 className="dialog-app-name">Visualizer.exe</h3>
+              <h3 className="dialog-app-name">wavi.lol</h3>
               <p className="dialog-app-desc">
-                High-Performance Real-Time Audio Shader Visualizer · v2.2
+                Real-Time Audio Shader Visualizer · v2.2
               </p>
             </div>
           </div>
@@ -80,7 +77,7 @@ export default function AboutModal() {
             AUDIO REACTIVE ENGINE
           </div>
           <p className="dialog-engine-note">
-            Visualizer.exe translates multi-band audio (Sub-Bass, Mid, Treble) through custom
+            wavi.lol translates multi-band audio (Sub-Bass, Mid, Treble) through custom
             GLSL fragment shaders with dynamic fluid motion, blooming petals, and ribbon silk harmonics.
           </p>
 

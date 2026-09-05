@@ -21,8 +21,8 @@ export default function StatusBar({
     : liveAudio
     ? 'LIVE AUDIO'
     : isSpotifyAuthed && spotifyPlaying
-    ? 'SPOTIFY SDK'
-    : 'LOCAL / AMBIENT'
+    ? 'SPOTIFY — NEEDS EXTENSION'
+    : 'IDLE — INSTALL EXTENSION'
 
   return (
     <footer className="status-bar" role="status" aria-label="System status">
@@ -105,7 +105,7 @@ export default function StatusBar({
           Preset: <strong>{currentPreset}</strong>
         </span>
         <span className="status-divider">|</span>
-        <span className="status-version">Visualizer.exe v2.2</span>
+        <span className="status-version">wavi.lol v2.2</span>
       </div>
     </footer>
   )

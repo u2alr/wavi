@@ -1,6 +1,12 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useStore } from '../store'
 import { getPlaylistTracks, getUserPlaylists, searchSpotifyTracks } from '../spotify'
+
+/** Smallest album-art thumbnail (Spotify returns images largest-first). */
+function artFor(track: { album?: { images?: { url: string }[] } }): string | null {
+  const imgs = track.album?.images
+  return imgs && imgs.length > 0 ? imgs[imgs.length - 1].url : null
+}
 import {
   ensureSpotifyPlayer,
   nextSpotify,
@@ -11,8 +17,6 @@ import {
   setPendingTrackId,
   transferPlaybackToDevice,
 } from '../spotifyPlayer'
-import { setAmbientMode } from '../audio'
-
 export default function SpotifyPanel() {
   const isSpotifyAuthed = useStore((s) => s.isSpotifyAuthed)
   const playlists = useStore((s) => s.spotifyPlaylists)
@@ -32,6 +36,9 @@ export default function SpotifyPanel() {
   const [selectedPlaylistId, setSelectedPlaylistId] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<typeof tracks>([])
+  const [pendingTrackId, setPendingTrack] = useState<string | null>(null)
+  /** Re-runnable copy of the last failed action, for the banner's Retry button. */
+  const retryRef = useRef<(() => void) | null>(null)
 
   const saveLastTrack = (track: { uri: string; name: string }, playlistId = selectedPlaylistId) => {
     localStorage.setItem('viz-last-spotify-track', JSON.stringify({
@@ -50,19 +57,25 @@ export default function SpotifyPanel() {
     }
   }
 
-  const fail = (err: unknown) => {
+  const fail = (err: unknown, retry?: () => void) => {
     const msg = err instanceof Error ? err.message : String(err)
     setError(msg)
+    retryRef.current = retry ?? null
     console.error(msg)
+  }
+
+  const clearError = () => {
+    setError('')
+    retryRef.current = null
   }
 
   const loadPlaylists = useCallback(async () => {
     setLoading(true)
-    setError('')
+    clearError()
     try {
       setPlaylists(await getUserPlaylists())
     } catch (err) {
-      fail(err)
+      fail(err, () => loadPlaylists().catch(() => {}))
     } finally {
       setLoading(false)
     }
@@ -77,18 +90,17 @@ export default function SpotifyPanel() {
 
   const playPlaylist = async (id: string) => {
     setLoading(true)
-    setError('')
+    clearError()
     try {
       const list = await getPlaylistTracks(id)
       setSelectedPlaylistId(id)
       setTracks(list)
       setIndex(0)
-      setAmbientMode(true)
       // Do NOT auto-play or set the current track — just load the tracks so
       // the user can pick one. This avoids interrupting whatever is currently
       // playing and prevents lyrics from showing for a song that isn't playing.
     } catch (err) {
-      fail(err)
+      fail(err, () => playPlaylist(id).catch(() => {}))
     } finally {
       setLoading(false)
     }
@@ -97,13 +109,13 @@ export default function SpotifyPanel() {
   const playTrack = async (i: number) => {
     const list = useStore.getState().spotifyTracks
     if (i < 0 || i >= list.length) return
-    setError('')
+    clearError()
+    setPendingTrack(list[i].id)
     try {
       setIndex(i)
       setCurrentTrack(list[i])
       setTrackName(list[i].name)
       setPlaying(true)
-      setAmbientMode(true)
       saveLastTrack(list[i])
       // Guard against stale SDK events immediately, before any async work.
       setPendingTrackId(list[i].id)
@@ -113,7 +125,9 @@ export default function SpotifyPanel() {
       await playTracks(list.map((t) => t.uri), i, deviceId)
     } catch (err) {
       setPendingTrackId(null)
-      fail(err)
+      fail(err, () => playTrack(i).catch(() => {}))
+    } finally {
+      setPendingTrack((cur) => (cur === list[i].id ? null : cur))
     }
   }
 
@@ -146,57 +160,103 @@ export default function SpotifyPanel() {
     }
   }
 
-  const searchTracks = async (event: React.FormEvent) => {
-    event.preventDefault()
-    if (!searchQuery.trim()) return
+  const runSearch = async (query: string) => {
     setLoading(true)
-    setError('')
+    clearError()
     try {
-      setSearchResults(await searchSpotifyTracks(searchQuery.trim()))
+      setSearchResults(await searchSpotifyTracks(query))
     } catch (err) {
-      fail(err)
+      fail(err, () => runSearch(query).catch(() => {}))
     } finally {
       setLoading(false)
     }
   }
 
+  const searchTracks = (event: React.FormEvent) => {
+    event.preventDefault()
+    const query = searchQuery.trim()
+    if (!query) return
+    runSearch(query).catch(() => {})
+  }
+
   const playSearchResult = async (track: typeof tracks[number]) => {
-    setError('')
+    clearError()
+    setPendingTrack(track.id)
     try {
       setTracks([track])
       setCurrentTrack(track)
       setTrackName(track.name)
       setIndex(0)
       setPlaying(true)
-      setAmbientMode(true)
       setPendingTrackId(track.id)
       const deviceId = await ensureSpotifyPlayer()
       await transferPlaybackToDevice(deviceId)
       await playTracks([track.uri], 0, deviceId)
     } catch (err) {
       setPendingTrackId(null)
-      fail(err)
+      fail(err, () => playSearchResult(track).catch(() => {}))
+    } finally {
+      setPendingTrack((cur) => (cur === track.id ? null : cur))
     }
   }
 
   if (!isSpotifyAuthed) return null
 
+  const showEmptyState = tracks.length === 0 && searchResults.length === 0
+
   return (
     <div className="spotify-panel">
+      {error && (
+        <div className="spotify-error-banner" role="alert">
+          <span className="spotify-error-text">{error}</span>
+          <div className="spotify-error-actions">
+            {retryRef.current && (
+              <button
+                className="spotify-error-retry"
+                onClick={() => {
+                  const retry = retryRef.current
+                  retryRef.current = null
+                  setError('')
+                  retry?.()
+                }}
+              >
+                Retry
+              </button>
+            )}
+            <button
+              className="spotify-error-dismiss"
+              onClick={clearError}
+              aria-label="Dismiss error"
+              title="Dismiss"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
+
       <div style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
         <select
           value={selectedPlaylistId}
+          className="xp-select"
+          aria-label="Choose a Spotify playlist"
           onChange={(e) => {
             if (e.target.value) playPlaylist(e.target.value)
           }}
           style={{ flex: 1, minWidth: 0 }}
         >
-          <option value="">Choose playlist…</option>
+          <option value="">{loading ? 'Loading playlists…' : 'Choose playlist…'}</option>
           {playlists.map((p) => (
             <option key={p.id} value={p.id}>{p.name}</option>
           ))}
         </select>
-        <button className="xp-btn" onClick={loadPlaylists} disabled={loading} title="Refresh Playlists">
+        <button
+          className="xp-btn"
+          onClick={loadPlaylists}
+          disabled={loading}
+          title="Reload your playlists from Spotify"
+          aria-label="Reload playlists"
+        >
           <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M23 4v6h-6" />
             <path d="M1 20v-6h6" />
@@ -206,31 +266,49 @@ export default function SpotifyPanel() {
       </div>
 
       <form className="spotify-search" onSubmit={searchTracks}>
+        <span className="spotify-search-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.4">
+            <circle cx="11" cy="11" r="7" />
+            <line x1="16.5" y1="16.5" x2="21" y2="21" />
+          </svg>
+        </span>
         <input
           type="search"
           value={searchQuery}
           onChange={(event) => setSearchQuery(event.target.value)}
-          placeholder="Search songs or artists"
-          aria-label="Search Spotify songs or artists"
+          placeholder="Search all of Spotify…"
+          aria-label="Search all of Spotify for songs or artists"
         />
-        <button className="xp-btn" type="submit" disabled={loading}>Search</button>
       </form>
 
       {searchResults.length > 0 && (
-        <div className="spotify-track-list spotify-search-results">
-          {searchResults.map((track) => (
-            <div key={track.id} className="spotify-track" onClick={() => playSearchResult(track)}>
-              <span className="spotify-track-index">
-                <svg viewBox="0 0 24 24" width="8" height="8" fill="currentColor">
-                  <polygon points="6 4 20 12 6 20 6 4" />
-                </svg>
-              </span>
-              <div className="spotify-track-meta">
-                <div className="spotify-track-title">{track.name}</div>
-                <div className="spotify-track-artist">{track.artists.map((artist) => artist.name).join(', ')}</div>
-              </div>
-            </div>
-          ))}
+        <div className="spotify-track-list spotify-search-results" role="listbox" aria-label="Search results">
+          {searchResults.map((track) => {
+            const art = artFor(track)
+            return (
+              <button
+                key={track.id}
+                type="button"
+                className={`spotify-track${pendingTrackId === track.id ? ' is-pending' : ''}`}
+                onClick={() => playSearchResult(track)}
+                aria-label={`Play ${track.name}`}
+              >
+                {art ? (
+                  <img src={art} alt="" className="spotify-track-art" loading="lazy" />
+                ) : (
+                  <span className="spotify-track-index">
+                    <svg viewBox="0 0 24 24" width="8" height="8" fill="currentColor">
+                      <polygon points="6 4 20 12 6 20 6 4" />
+                    </svg>
+                  </span>
+                )}
+                <div className="spotify-track-meta">
+                  <div className="spotify-track-title">{track.name}</div>
+                  <div className="spotify-track-artist">{track.artists.map((artist) => artist.name).join(', ')}</div>
+                </div>
+              </button>
+            )
+          })}
         </div>
       )}
 
@@ -260,26 +338,48 @@ export default function SpotifyPanel() {
           </svg>
         </button>
       </div>
-      {error && <div className="spotify-error">{error}</div>}
-
-      {tracks.length > 0 && (
-        <div className="spotify-track-list">
-          {tracks.map((t, i) => (
-            <div
-              key={t.id}
-              className={`spotify-track ${i === index ? 'active' : ''}`}
-              onClick={() => playTrack(i)}
-            >
-              <span className="spotify-track-index">{i + 1}</span>
-              <div className="spotify-track-meta">
-                <div className="spotify-track-title">{t.name}</div>
-                <div className="spotify-track-artist">
-                  {t.artists.map((a) => a.name).join(', ')}
-                </div>
-              </div>
-            </div>
-          ))}
+      {showEmptyState ? (
+        <div className="spotify-empty">
+          <div className="spotify-empty-icon">🎵</div>
+          <div className="spotify-empty-text">Select a playlist or search to start picking songs.</div>
         </div>
+      ) : (
+        tracks.length > 0 && (
+          <div className="spotify-track-list" aria-busy={loading}>
+            {tracks.map((t, i) => {
+              const isActive = i === index
+              const art = artFor(t)
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  className={`spotify-track${isActive ? ' active' : ''}${pendingTrackId === t.id ? ' is-pending' : ''}`}
+                  onClick={() => playTrack(i)}
+                  aria-label={`Play ${t.name}`}
+                  aria-current={isActive || undefined}
+                >
+                  <span className="spotify-track-index">{i + 1}</span>
+                  {art && <img src={art} alt="" className="spotify-track-art" loading="lazy" />}
+                  <div className="spotify-track-meta">
+                    <div className="spotify-track-title">
+                      {isActive && playing && (
+                        <span className="spotify-eq" aria-hidden="true">
+                          <span />
+                          <span />
+                          <span />
+                        </span>
+                      )}
+                      {t.name}
+                    </div>
+                    <div className="spotify-track-artist">
+                      {t.artists.map((a) => a.name).join(', ')}
+                    </div>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        )
       )}
     </div>
   )

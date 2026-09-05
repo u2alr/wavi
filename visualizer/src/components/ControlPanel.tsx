@@ -1,16 +1,15 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { useStore } from '../store'
 import SpotifyAuth from './SpotifyAuth'
 import SpotifyPanel from './SpotifyPanel'
-import { clearExtensionAudioData, initAudioFromStream } from '../audio'
 
-export default function ControlPanel({ onLoadFiles }: { onLoadFiles: () => void }) {
+export default function ControlPanel() {
   // Granular Zustand selectors to prevent unnecessary re-renders
   const currentPreset = useStore((s) => s.currentPreset)
   const params = useStore((s) => s.params)
   const savedPresets = useStore((s) => s.savedPresets)
-  const playlistLength = useStore((s) => s.playlist.length)
   const isPanelCollapsed = useStore((s) => s.isPanelCollapsed)
+  const bratWhiteBg = useStore((s) => s.bratWhiteBg)
 
   const setCurrentPreset = useStore((s) => s.setCurrentPreset)
   const setParam = useStore((s) => s.setParam)
@@ -18,13 +17,14 @@ export default function ControlPanel({ onLoadFiles }: { onLoadFiles: () => void 
   const savePreset = useStore((s) => s.savePreset)
   const loadPreset = useStore((s) => s.loadPreset)
   const deletePreset = useStore((s) => s.deletePreset)
-  const setTrackName = useStore((s) => s.setTrackName)
   const togglePanelCollapsed = useStore((s) => s.togglePanelCollapsed)
+  const setBratWhiteBg = useStore((s) => s.setBratWhiteBg)
 
   const [saveName, setSaveName] = useState('')
   const [showSave, setShowSave] = useState(false)
-  const [isListeningMic, setIsListeningMic] = useState(false)
   const [copiedNotification, setCopiedNotification] = useState(false)
+  const [toast, setToast] = useState<{ text: string; error?: boolean; key: number } | null>(null)
+  const toastTimer = useRef(0)
 
   // Accordion state
   const [openSections, setOpenSections] = useState({
@@ -37,32 +37,40 @@ export default function ControlPanel({ onLoadFiles }: { onLoadFiles: () => void 
     setOpenSections((prev) => ({ ...prev, [section]: !prev[section] }))
   }
 
-  const handleToggleMic = useCallback(async () => {
-    if (isListeningMic) {
-      setIsListeningMic(false)
-      clearExtensionAudioData()
-      setTrackName('')
-    } else {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-        initAudioFromStream(stream)
-        setTrackName('Live Microphone / Line In')
-        setIsListeningMic(true)
-      } catch (err) {
-        console.error('Microphone access failed:', err)
-        alert('Could not access microphone: ' + (err instanceof Error ? err.message : String(err)))
-      }
-    }
-  }, [isListeningMic, setTrackName])
+  const showToast = useCallback((text: string, error = false) => {
+    window.clearTimeout(toastTimer.current)
+    setToast({ text, error, key: Date.now() })
+    toastTimer.current = window.setTimeout(() => setToast(null), 2600)
+  }, [])
 
-  const handleShare = useCallback(() => {
+  const handleShare = useCallback(async () => {
     const data = btoa(JSON.stringify({ presetType: currentPreset, params }))
     const url = `${window.location.origin}${window.location.pathname}#p=${data}`
-    navigator.clipboard.writeText(url).then(() => {
+    try {
+      await navigator.clipboard.writeText(url)
       setCopiedNotification(true)
-      setTimeout(() => setCopiedNotification(false), 2000)
-    })
-  }, [currentPreset, params])
+      showToast('Share link copied to clipboard')
+      window.setTimeout(() => setCopiedNotification(false), 2000)
+    } catch {
+      showToast('Could not copy link — clipboard blocked', true)
+    }
+  }, [currentPreset, params, showToast])
+
+  const commitSave = useCallback(() => {
+    const name = saveName.trim()
+    if (!name) return
+    savePreset(name)
+    setSaveName('')
+    setShowSave(false)
+    showToast(`Preset "${name}" saved`)
+  }, [saveName, savePreset, showToast])
+
+  const onHeaderKeyDown = (section: keyof typeof openSections) => (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      toggleSection(section)
+    }
+  }
 
   return (
     <aside className={`control-panel ${isPanelCollapsed ? 'collapsed' : ''}`} aria-label="Visualizer Controls">
@@ -79,7 +87,7 @@ export default function ControlPanel({ onLoadFiles }: { onLoadFiles: () => void 
       <div className="control-panel-scroll">
         {/* AUDIO SOURCE SECTION */}
         <div className="ctrl-group">
-          <div className="ctrl-group-header" onClick={() => toggleSection('audio')}>
+          <div className="ctrl-group-header" role="button" tabIndex={0} aria-expanded={openSections.audio} onClick={() => toggleSection('audio')} onKeyDown={onHeaderKeyDown('audio')}>
             <div className="ctrl-group-title">
               <span>AUDIO SOURCE</span>
             </div>
@@ -88,31 +96,6 @@ export default function ControlPanel({ onLoadFiles }: { onLoadFiles: () => void 
 
           {openSections.audio && (
             <div className="ctrl-group-body">
-              <div className="audio-source-actions">
-                <button className="xp-btn primary source-btn" onClick={onLoadFiles}>
-                  Load Local Files
-                </button>
-                {playlistLength > 0 && (
-                  <span className="track-badge">{playlistLength} file{playlistLength > 1 ? 's' : ''}</span>
-                )}
-              </div>
-
-              <div className="audio-source-actions" style={{ marginTop: 6 }}>
-                <button
-                  className={`xp-btn ${isListeningMic ? 'active-mic' : ''} source-btn`}
-                  onClick={handleToggleMic}
-                  title="Visualize live microphone or system audio line-in"
-                >
-                  {isListeningMic ? 'Stop Mic Input' : 'Live Mic Input'}
-                </button>
-              </div>
-
-              <div className="source-divider">
-                <span className="source-divider-line" />
-                <span className="source-divider-text">SPOTIFY STREAMING</span>
-                <span className="source-divider-line" />
-              </div>
-
               <SpotifyAuth />
               <SpotifyPanel />
             </div>
@@ -121,7 +104,7 @@ export default function ControlPanel({ onLoadFiles }: { onLoadFiles: () => void 
 
         {/* VISUALIZER PRESETS & SHADER PARAMS */}
         <div className="ctrl-group">
-          <div className="ctrl-group-header" onClick={() => toggleSection('visualizer')}>
+          <div className="ctrl-group-header" role="button" tabIndex={0} aria-expanded={openSections.visualizer} onClick={() => toggleSection('visualizer')} onKeyDown={onHeaderKeyDown('visualizer')}>
             <div className="ctrl-group-title">
               <span>VISUALIZER ENGINE</span>
             </div>
@@ -153,8 +136,26 @@ export default function ControlPanel({ onLoadFiles }: { onLoadFiles: () => void 
                 <option value="mellowDrift">Mellow Drift (Silk Instrumentals)</option>
                 <option value="prismaticGarden">Prismatic Garden (Flowing Petals)</option>
                 <option value="auroraSilk">Aurora Silk (Flowing Ribbons)</option>
+                <option value="liquidDrift">Liquid Drift (Liquid Mercury)</option>
+                <option value="arcticSwirl">Arctic Swirl (Whirlpool)</option>
+                <option value="laserSilk">Laser Silk (Contour Lasers)</option>
+                <option value="sonarBloom">Sonar Bloom (Ripple Rings)</option>
+                <option value="pastels">Pastels (Laser Threads)</option>
                 <option value="brat">brat (Audio Reactive Typography)</option>
               </select>
+
+              {currentPreset === 'brat' && (
+                <label className="brat-bg-toggle" htmlFor="brat-white-bg">
+                  <span className="brat-bg-label">White background</span>
+                  <input
+                    id="brat-white-bg"
+                    type="checkbox"
+                    checked={bratWhiteBg}
+                    onChange={(e) => setBratWhiteBg(e.target.checked)}
+                  />
+                  <span className="brat-switch" aria-hidden="true" />
+                </label>
+              )}
 
               <div className="sliders-container">
                 <div className="ctrl-row">
@@ -237,21 +238,6 @@ export default function ControlPanel({ onLoadFiles }: { onLoadFiles: () => void 
                   <span className="val">{params.complexity.toFixed(1)}</span>
                 </div>
 
-                <div className="ctrl-row">
-                  <div className="label-with-tooltip">
-                    <label htmlFor="param-thickness">Thickness</label>
-                  </div>
-                  <input
-                    id="param-thickness"
-                    type="range"
-                    min="0.3"
-                    max="3"
-                    step="0.1"
-                    value={params.thickness}
-                    onChange={(e) => setParam('thickness', +e.target.value)}
-                  />
-                  <span className="val">{params.thickness.toFixed(1)}</span>
-                </div>
               </div>
             </div>
           )}
@@ -259,7 +245,7 @@ export default function ControlPanel({ onLoadFiles }: { onLoadFiles: () => void 
 
         {/* PRESET BOOKMARKS */}
         <div className="ctrl-group">
-          <div className="ctrl-group-header" onClick={() => toggleSection('presets')}>
+          <div className="ctrl-group-header" role="button" tabIndex={0} aria-expanded={openSections.presets} onClick={() => toggleSection('presets')} onKeyDown={onHeaderKeyDown('presets')}>
             <div className="ctrl-group-title">
               <span>SAVED PRESETS</span>
             </div>
@@ -268,9 +254,9 @@ export default function ControlPanel({ onLoadFiles }: { onLoadFiles: () => void 
 
           {openSections.presets && (
             <div className="ctrl-group-body">
-              <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
                 <button
-                  className="xp-btn"
+                  className="xp-btn primary"
                   onClick={() => setShowSave(!showSave)}
                   style={{ flex: 1 }}
                 >
@@ -294,24 +280,14 @@ export default function ControlPanel({ onLoadFiles }: { onLoadFiles: () => void 
                     value={saveName}
                     onChange={(e) => setSaveName(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter' && saveName.trim()) {
-                        savePreset(saveName.trim())
-                        setSaveName('')
-                        setShowSave(false)
-                      }
+                      if (e.key === 'Enter') commitSave()
                     }}
                     className="xp-input"
                     autoFocus
                   />
                   <button
                     className="xp-btn primary"
-                    onClick={() => {
-                      if (saveName.trim()) {
-                        savePreset(saveName.trim())
-                        setSaveName('')
-                        setShowSave(false)
-                      }
-                    }}
+                    onClick={commitSave}
                   >
                     Save
                   </button>
@@ -323,29 +299,46 @@ export default function ControlPanel({ onLoadFiles }: { onLoadFiles: () => void 
                   <div
                     key={p.id}
                     className="preset-chip"
+                    role="button"
+                    tabIndex={0}
                     onClick={() => loadPreset(p.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        loadPreset(p.id)
+                      }
+                    }}
                     title={`Load "${p.name}"`}
                   >
                     <span className="chip-name">{p.name}</span>
-                    <span
+                    <button
+                      type="button"
                       className="del"
                       onClick={(e) => {
                         e.stopPropagation()
                         deletePreset(p.id)
                       }}
+                      aria-label={`Delete preset ${p.name}`}
                       title="Delete preset"
                     >
                       ×
-                    </span>
+                    </button>
                   </div>
                 ))}
                 {savedPresets.length === 0 && (
-                  <span className="no-presets-text">No custom presets saved yet.</span>
+                  <span className="no-presets-text">No custom presets yet — save your first one.</span>
                 )}
               </div>
             </div>
           )}
         </div>
+      </div>
+      <div className="xp-toast-region" role="status" aria-live="polite">
+        {toast && (
+          <div key={toast.key} className={`xp-toast show${toast.error ? ' error' : ''}`}>
+            {toast.text}
+          </div>
+        )}
       </div>
     </aside>
   )

@@ -25,7 +25,7 @@ export interface VisualizerMetrics {
   mid: number
   treble: number
   overall: number
-  sourceMode: 'live' | 'estimated' | 'idle'
+  sourceMode: 'live' | 'idle'
 }
 
 interface Store {
@@ -50,6 +50,7 @@ interface Store {
   isPanelCollapsed: boolean
   isMiniPlayer: boolean
   activeModal: 'help' | 'shortcuts' | null
+  bratWhiteBg: boolean
 
   setCurrentPreset: (p: string) => void
   setParam: <K extends keyof PresetParams>(key: K, value: PresetParams[K]) => void
@@ -76,6 +77,7 @@ interface Store {
   loadPreset: (id: string) => void
   deletePreset: (id: string) => void
   setVolume: (v: number) => void
+  setBratWhiteBg: (b: boolean) => void
 }
 
 const DEFAULT_PARAMS: PresetParams = {
@@ -121,6 +123,7 @@ export const useStore = create<Store>((set, get) => ({
   activeModal: null,
   savedPresets: loadSavedPresets(),
   volume: 1.0,
+  bratWhiteBg: false,
 
   setCurrentPreset: (p) => set({ currentPreset: p }),
   setParam: (key, value) => set((s) => ({ params: { ...s.params, [key]: value } })),
@@ -144,6 +147,7 @@ export const useStore = create<Store>((set, get) => ({
   setMetrics: (metrics) => set({ metrics }),
   setTrackName: (name) => set({ trackName: name }),
   setVolume: (v) => set({ volume: v }),
+  setBratWhiteBg: (b) => set({ bratWhiteBg: b }),
 
   savePreset: (name) => {
     const { currentPreset, params, savedPresets } = get()

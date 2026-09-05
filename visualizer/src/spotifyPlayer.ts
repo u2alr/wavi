@@ -27,10 +27,10 @@ export interface SpotifyPlaybackState {
 let player: any = null
 let deviceId: string | null = null
 let readyResolvers: Array<() => void> = []
-let stateListener: ((s: SpotifyPlaybackState) => void) | null = null
+let stateListener: ((s: SpotifyPlaybackState | null) => void) | null = null
 let pendingTrackId: string | null = null
 
-export function setSpotifyStateListener(cb: (s: SpotifyPlaybackState) => void) {
+export function setSpotifyStateListener(cb: (s: SpotifyPlaybackState | null) => void) {
   stateListener = cb
 }
 
@@ -77,7 +77,7 @@ export async function ensureSpotifyPlayer(): Promise<string> {
   if (!token) throw new Error('Not authenticated with Spotify')
 
   player = new window.Spotify.Player({
-    name: 'Visualizer.exe',
+    name: 'wavi.lol',
     getOAuthToken: async (cb: (t: string) => void) => {
       const t = await getAccessToken()
       cb(t ?? '')
@@ -101,7 +101,7 @@ export async function ensureSpotifyPlayer(): Promise<string> {
     console.warn('Spotify device went offline:', device_id)
   })
   player.addListener('player_state_changed', (state: SpotifyPlaybackState | null) => {
-    if (state && stateListener) stateListener(state)
+    if (stateListener) stateListener(state as SpotifyPlaybackState)
   })
 
   await player.connect()

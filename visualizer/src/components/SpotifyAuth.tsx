@@ -26,15 +26,17 @@ export default function SpotifyAuth() {
         <span className="spotify-name" title={spotifyUser.display_name ?? spotifyUser.id}>
           {spotifyUser.display_name ?? spotifyUser.id}
         </span>
-        <button className="xp-btn" onClick={logout}>Disconnect</button>
+        <button className="spotify-disconnect" onClick={logout} title="Disconnect Spotify account">
+          Disconnect
+        </button>
       </div>
     )
   }
 
   return (
     <button
-      className="xp-btn"
-      style={{ width: '100%', marginBottom: 6, fontWeight: 'bold', color: '#1DB954' }}
+      className="xp-btn primary"
+      style={{ width: '100%', marginBottom: 6 }}
       onClick={() => { startSpotifyAuth().catch(console.error) }}
     >
       Connect Spotify
