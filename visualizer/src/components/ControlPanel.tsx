@@ -3,19 +3,8 @@ import { useStore } from '../store'
 import SpotifyAuth from './SpotifyAuth'
 import SpotifyPanel from './SpotifyPanel'
 import AudioPlayerBox from './AudioPlayerBox'
-
-const PRESET_OPTIONS = [
-  { value: 'arcticSwirl', label: 'Arctic Swirl' },
-  { value: 'auroraSilk', label: 'Aurora Silk' },
-  { value: 'brat', label: 'brat' },
-  { value: 'canvasAmbient', label: 'Canvas Ambient' },
-  { value: 'fractalEmber', label: 'Fractal Ember' },
-  { value: 'laserSilk', label: 'Laser Silk' },
-  { value: 'liquidDrift', label: 'Liquid Drift' },
-  { value: 'mellowDrift', label: 'Mellow Drift' },
-  { value: 'prismaticGarden', label: 'Prismatic Garden' },
-  { value: 'sonarBloom', label: 'Sonar Bloom' },
-]
+import PanelSelect from './PanelSelect'
+import { PRESET_OPTIONS } from '../presets'
 
 function Chevron() {
   return (
@@ -36,9 +25,11 @@ export default function ControlPanel({
   const currentPreset = useStore((s) => s.currentPreset)
   const params = useStore((s) => s.params)
   const isPanelCollapsed = useStore((s) => s.isPanelCollapsed)
+  const isSpotifyAuthed = useStore((s) => s.isSpotifyAuthed)
   const bratWhiteBg = useStore((s) => s.bratWhiteBg)
   const bratKaraoke = useStore((s) => s.bratKaraoke)
 
+  const setCurrentPreset = useStore((s) => s.setCurrentPreset)
   const setParam = useStore((s) => s.setParam)
   const resetParams = useStore((s) => s.resetParams)
   const togglePanelCollapsed = useStore((s) => s.togglePanelCollapsed)
@@ -65,13 +56,10 @@ export default function ControlPanel({
   const pct = (v: number, min: number, max: number) =>
     `${Math.max(0, Math.min(100, ((v - min) / (max - min)) * 100))}%`
 
-  const currentPresetLabel =
-    PRESET_OPTIONS.find((option) => option.value === currentPreset)?.label ?? currentPreset
-
   return (
     <aside className={`control-panel ${isPanelCollapsed ? 'collapsed' : ''}`} aria-label="Visualizer Controls">
       {isPanelCollapsed && (
-        <button className="panel-reopen" onClick={togglePanelCollapsed} title="Expand Controls (Tab)" aria-label="Expand Control Panel">
+        <button className="panel-reopen" onClick={togglePanelCollapsed} title="Expand Controls (Tab / H)" aria-label="Expand Control Panel" aria-expanded={!isPanelCollapsed}>
           <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M10 4L6 8l4 4" />
           </svg>
@@ -79,13 +67,23 @@ export default function ControlPanel({
       )}
       <div className="panel-header">
         <div className="panel-header-copy">
-          <span className="panel-header-eyebrow">Controls<span className="panel-header-sub">({currentPresetLabel})</span></span>
+          <span className="panel-header-eyebrow">Preset</span>
+          <div className="panel-preset">
+            <PanelSelect
+              id="preset-select"
+              value={currentPreset}
+              options={PRESET_OPTIONS}
+              onChange={setCurrentPreset}
+              ariaLabel="Choose visualizer preset"
+            />
+          </div>
         </div>
         <button
           className="panel-collapse-btn"
           onClick={togglePanelCollapsed}
-          title="Collapse Controls (Tab)"
+          title="Collapse Controls (Tab / H)"
           aria-label="Collapse Control Panel"
+          aria-expanded={!isPanelCollapsed}
         >
           <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M6 4l4 4-4 4" />
@@ -96,7 +94,7 @@ export default function ControlPanel({
       <div className="control-panel-scroll">
         {/* AUDIO SOURCE SECTION */}
         <div className={`ctrl-group audio-source-group${openSections.audio ? ' open' : ''}`}>
-          <div className="ctrl-group-header" role="button" tabIndex={0} aria-expanded={openSections.audio} onClick={() => toggleSection('audio')} onKeyDown={onHeaderKeyDown('audio')}>
+          <div className="ctrl-group-header" role="button" tabIndex={0} id="ctrl-hdr-audio" aria-controls="ctrl-body-audio" aria-expanded={openSections.audio} onClick={() => toggleSection('audio')} onKeyDown={onHeaderKeyDown('audio')}>
             <div className="ctrl-group-eyebrow-row">
               <div className="ctrl-group-title">
                 <span>Audio source</span>
@@ -105,16 +103,22 @@ export default function ControlPanel({
             <span className="accordion-arrow" aria-hidden="true"><Chevron /></span>
           </div>
 
-          <div className="ctrl-group-body">
+          <div className="ctrl-group-body" id="ctrl-body-audio" role="region" aria-labelledby="ctrl-hdr-audio">
             <div className="ctrl-group-body-inner">
+              <SpotifyAuth />
+              {!isSpotifyAuthed && (
+                <p className="field-hint audio-connect-hint">
+                  Connect Spotify to search &amp; play tracks, or use File &rarr; Open&hellip; for local audio.
+                </p>
+              )}
               <SpotifyPanel />
             </div>
           </div>
         </div>
 
         {/* VISUALIZER PRESETS & SHADER PARAMS */}
-        <div className={`ctrl-group${openSections.visualizer ? ' open' : ''}`}>
-          <div className="ctrl-group-header" role="button" tabIndex={0} aria-expanded={openSections.visualizer} onClick={() => toggleSection('visualizer')} onKeyDown={onHeaderKeyDown('visualizer')}>
+        <div className={`ctrl-group visualizer-group${openSections.visualizer ? ' open' : ''}`}>
+          <div className="ctrl-group-header" role="button" tabIndex={0} id="ctrl-hdr-visualizer" aria-controls="ctrl-body-visualizer" aria-expanded={openSections.visualizer} onClick={() => toggleSection('visualizer')} onKeyDown={onHeaderKeyDown('visualizer')}>
             <div className="ctrl-group-eyebrow-row">
               <div className="ctrl-group-title">
                 <span>Visualizer engine</span>
@@ -123,7 +127,7 @@ export default function ControlPanel({
             <span className="accordion-arrow" aria-hidden="true"><Chevron /></span>
           </div>
 
-          <div className="ctrl-group-body">
+          <div className="ctrl-group-body" id="ctrl-body-visualizer" role="region" aria-labelledby="ctrl-hdr-visualizer">
             <div className="ctrl-group-body-inner">
               {currentPreset === 'brat' ? (
                 <>
@@ -162,6 +166,7 @@ export default function ControlPanel({
                     max="3"
                     step="0.1"
                     value={params.intensity}
+                    aria-valuetext={params.intensity.toFixed(1)}
                     style={{ ['--p' as string]: pct(params.intensity, 0.5, 3) }}
                     onChange={(e) => setParam('intensity', +e.target.value)}
                   />
@@ -179,6 +184,7 @@ export default function ControlPanel({
                     max="5"
                     step="0.1"
                     value={params.sensitivity}
+                    aria-valuetext={params.sensitivity.toFixed(1)}
                     style={{ ['--p' as string]: pct(params.sensitivity, 0.5, 5) }}
                     onChange={(e) => setParam('sensitivity', +e.target.value)}
                   />
@@ -196,6 +202,7 @@ export default function ControlPanel({
                     max="360"
                     step="1"
                     value={params.hueShift}
+                    aria-valuetext={`${Math.round(params.hueShift)} degrees`}
                     style={{ ['--p' as string]: pct(params.hueShift, 0, 360) }}
                     onChange={(e) => setParam('hueShift', +e.target.value)}
                   />
@@ -213,6 +220,7 @@ export default function ControlPanel({
                     max="3"
                     step="0.1"
                     value={params.speed}
+                    aria-valuetext={params.speed.toFixed(1)}
                     style={{ ['--p' as string]: pct(params.speed, 0.1, 3) }}
                     onChange={(e) => setParam('speed', +e.target.value)}
                   />
@@ -230,6 +238,7 @@ export default function ControlPanel({
                     max="3"
                     step="0.1"
                     value={params.complexity}
+                    aria-valuetext={params.complexity.toFixed(1)}
                     style={{ ['--p' as string]: pct(params.complexity, 0.5, 3) }}
                     onChange={(e) => setParam('complexity', +e.target.value)}
                   />
@@ -256,7 +265,6 @@ export default function ControlPanel({
       {/* Static footer — pinned below the scroll area, never scrolls. */}
       <div className="panel-footer">
         <AudioPlayerBox onPrev={onPrev} onNext={onNext} />
-        <SpotifyAuth />
       </div>
     </aside>
   )

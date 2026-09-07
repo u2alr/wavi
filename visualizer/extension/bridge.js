@@ -4,6 +4,7 @@ chrome.runtime.onMessage.addListener((message) => {
     source: 'visualizer-audio-extension',
     type: message.type,
     bins: message.bins,
+    wave: message.wave,
     signal: message.signal,
     status: message.status,
     message: message.message,

@@ -4,7 +4,8 @@ import SceneErrorBoundary from './components/SceneErrorBoundary'
 import FullscreenPill from './components/FullscreenPill'
 import ControlPanel from './components/ControlPanel'
 import AboutModal from './components/AboutModal'
-import { useStore } from './store'
+import { useStore, resolvePresetId } from './store'
+import { PRESET_TYPES, PRESET_LABELS } from './presets'
 import {
   clearExtensionAudioData,
   getAudioBands,
@@ -13,6 +14,7 @@ import {
   initAudio,
   setAudioVolume,
   setExtensionAudioData,
+  setExtensionWaveData,
 } from './audio'
 import {
   getPendingTrackId,
@@ -30,18 +32,7 @@ import StatusBar from './components/StatusBar'
 import ExtensionBadge from './components/ExtensionBadge'
 import SavedLooksSection from './components/SavedLooksMenu'
 
-const PRESET_TYPES = [
-  'arcticSwirl',
-  'auroraSilk',
-  'brat',
-  'canvasAmbient',
-  'fractalEmber',
-  'laserSilk',
-  'liquidDrift',
-  'mellowDrift',
-  'prismaticGarden',
-  'sonarBloom',
-]
+// Canonical order also drives the A/D keyboard cycle.
 
 export default function App() {
   const fileRef = useRef<HTMLInputElement>(null)
@@ -108,7 +99,9 @@ export default function App() {
           setCurrentPreset('brat')
           useStore.getState().setBratKaraoke(true)
         } else if (data.presetType) {
-          setCurrentPreset(data.presetType)
+          // Map pre-rename ids (arcticSwirl, mellowDrift, ...) to their new ids.
+          const pid = resolvePresetId(data.presetType)
+          if (pid) setCurrentPreset(pid)
         }
         if (data.params) setParams(data.params)
       } catch (e) {
@@ -208,6 +201,7 @@ export default function App() {
       if (event.data.type === 'audio-data' && Array.isArray(event.data.bins)) {
         if (event.data.signal > 8) {
           setExtensionAudioData(event.data.bins)
+          if (Array.isArray(event.data.wave)) setExtensionWaveData(event.data.wave)
           setExtensionStatus('EXT LIVE')
         } else {
           clearExtensionAudioData()
@@ -586,25 +580,7 @@ export default function App() {
                           setOpenMenu(null)
                         }}
                       >
-                        <span>
-                          {type === 'mellowDrift'
-                            ? 'Mellow Drift (Silk)'
-                            : type === 'prismaticGarden'
-                              ? 'Prismatic Garden (Petals)'
-                              : type === 'auroraSilk'
-                                ? 'Aurora Silk (Ribbons)'
-                                : type === 'liquidDrift'
-                                  ? 'Liquid Drift (Mercury)'
-                                  : type === 'arcticSwirl'
-                                    ? 'Arctic Swirl (Whirlpool)'
-                                    : type === 'laserSilk'
-                                      ? 'Laser Silk (Contours)'
-                                      : type === 'sonarBloom'
-                                        ? 'Sonar Bloom (Ripples)'
-                                        : type === 'pastels'
-                                          ? 'Pastels (Laser Threads)'
-                                          : 'brat (Typography)'}
-                        </span>
+                        <span>{PRESET_LABELS[type] ?? type}</span>
                       </div>
                     ))}
                     <div className="dropdown-divider" />

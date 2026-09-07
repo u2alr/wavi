@@ -1,9 +1,11 @@
-import { useMemo, useRef, useEffect, useState } from 'react'
+import { useMemo, useRef, useEffect, useState, useCallback } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useStore } from '../store'
 import { getFreqData } from '../audio'
 import { getSampleRate } from '../audio'
+import { getExtensionWaveData } from '../audio'
+import { getEmberWaveAnalyser, teardownEmberWaveAnalyser } from '../emberAnalyser'
 
 
 const edgeCache = new Map<string, number[]>()
@@ -70,94 +72,7 @@ function readBands7(frequency: Uint8Array, out: number[]) {
   return sumBands(frequency, edges, 7, out)
 }
 
-function PrismaticBloomPreset() {
-  const groupRef = useRef<THREE.Group>(null!)
-  const raysRef = useRef<THREE.InstancedMesh>(null!)
-  // Reused every frame — no per-ray objects, no per-frame garbage.
-  const dummy = useMemo(() => new THREE.Object3D(), [])
-  const rayColor = useMemo(() => new THREE.Color(), [])
-
-  // ─────────────────────── SETTINGS ───────────────────────
-  const BAR_COUNT     = 96 // rays around the circle (64 sparse · 128 dense · 192 ultra)
-  const MAX_LENGTH    = 4.5  // ray reach at full volume (1.5 short · 2.9 to edge · 3.5 past)
-  const THICKNESS     = 0.004// ray base width (0.008 needle · 0.03 chunky)
-  const TAPER         = 1.0 // tip width vs base (0 = sharp needle · 1 = no taper)
-  const CENTER_OFFSET = 0    // start radius (0 = from center · 0.3 = donut hole)
-  const GATE          = 0.02 // min level to exist — below this = BLANK screen
-  const JITTER        = 0.1  // per-ray length randomness (0 perfect circle · 0.5 organic)
-  const SPIN_SPEED    = 0.05 // rotation (0 static · 0.2 fast · negative = reverse)
-  const HUE_STEP      = 8    // hue° per ray (0 single color · 3 rainbow around circle)
-  const HUE_PUNCH     = 35   // hue kick on hits (0 stable · 60 colors swirl on beat)
-  const SATURATION    = 0.9  // 0 = grayscale · 1 = neon
-  const BRIGHTNESS    = 0.1 // base lightness (0.2 moody · 0.5 bright)
-  const PUNCH         = 2  // thickness growth on hits (0 constant · 2 fat on beat)
-  // ────────────────────────────────────────────────────────
-
-  useFrame((state) => {
-    const { intensity, sensitivity, hueShift, speed } = useStore.getState().params
-    const frequency = getFreqData()
-    const rays = raysRef.current
-    if (!rays) return
-
-    for (let index = 0; index < BAR_COUNT; index++) {
-      const bin = Math.min(frequency.length - 1, Math.floor((index / BAR_COUNT) * frequency.length * 0.82))
-      const level = (frequency[bin] ?? 0) / 255
-      const energy = Math.min(1, level * sensitivity)
-
-      // BLANK WHEN SILENT: no audio = no rays — zero-scale hides the instance.
-      if (energy < GATE) {
-        dummy.position.set(0, 0, 0)
-        dummy.scale.set(0, 0, 0)
-        dummy.rotation.set(0, 0, 0)
-        dummy.updateMatrix()
-        rays.setMatrixAt(index, dummy.matrix)
-        continue
-      }
-
-      const jitter = 1 - JITTER + JITTER * Math.abs(Math.sin(index * 12.9898))
-      const len = energy * (MAX_LENGTH * intensity / 1.5) * jitter
-
-      const angle = (index / BAR_COUNT) * Math.PI * 2
-      const dx = Math.cos(angle), dy = Math.sin(angle)
-      const girth = 1 + energy * PUNCH
-
-      dummy.scale.set(girth, len, girth)
-      dummy.position.set(dx * (CENTER_OFFSET + len / 2), dy * (CENTER_OFFSET + len / 2), 0)
-      dummy.rotation.set(0, 0, angle - Math.PI / 2)
-      dummy.updateMatrix()
-      rays.setMatrixAt(index, dummy.matrix)
-
-      // NOTE: material color must stay white — instance colors multiply it.
-      rayColor.setHSL(
-        ((hueShift + index * HUE_STEP + level * HUE_PUNCH) % 360) / 360,
-        SATURATION,
-        BRIGHTNESS + level * 0.35
-      )
-      rays.setColorAt(index, rayColor)
-    }
-    rays.instanceMatrix.needsUpdate = true
-    if (rays.instanceColor) rays.instanceColor.needsUpdate = true
-
-    if (groupRef.current) {
-      groupRef.current.rotation.z = state.clock.elapsedTime * SPIN_SPEED * speed
-    }
-  })
-
-  return (
-    <group ref={groupRef}>
-      <instancedMesh
-        ref={raysRef}
-        args={[undefined, undefined, BAR_COUNT]}
-        frustumCulled={false}
-      >
-        <cylinderGeometry args={[THICKNESS * TAPER, THICKNESS, 1, 6]} />
-        <meshBasicMaterial color="#ffffff" />
-      </instancedMesh>
-    </group>
-  )
-}
-
-function MellowDriftPreset() {
+function Mellow2Preset() {
   const materialRef = useRef<THREE.ShaderMaterial>(null!)
   const viewport = useThree((state) => state.viewport)
   // Reused every frame — readBands writes in place, zero per-frame garbage.
@@ -414,7 +329,7 @@ function AuroraSilkPreset() {
   return <mesh><planeGeometry args={[viewport.width, viewport.height]} /><shaderMaterial ref={materialRef} {...shader} /></mesh>
 }
 
-function LiquidDriftPreset() {
+function Mellow1Preset() {
   const materialRef = useRef<THREE.ShaderMaterial>(null!)
   const viewport = useThree((state) => state.viewport)
   const bandsScratch = useMemo(() => ({ bass: 0, mid: 0, treble: 0 }), [])
@@ -529,7 +444,7 @@ function LiquidDriftPreset() {
   return <mesh><planeGeometry args={[viewport.width, viewport.height]} /><shaderMaterial ref={materialRef} {...shader} /></mesh>
 }
 
-function ArcticSwirlPreset() {
+function PrismaticTempestPreset() {
   const materialRef = useRef<THREE.ShaderMaterial>(null!)
   const viewport = useThree((state) => state.viewport)
   const peaks = useRef(new Float64Array(7).fill(0.02))
@@ -662,7 +577,7 @@ function ArcticSwirlPreset() {
   return <mesh><planeGeometry args={[viewport.width, viewport.height]} /><shaderMaterial ref={materialRef} {...shader} /></mesh>
 }
 
-function LaserSilkPreset() {
+function AcidWashPreset() {
   const materialRef = useRef<THREE.ShaderMaterial>(null!)
   const viewport = useThree((state) => state.viewport)
   // running per-band peak for auto-gain (adapts to any input level)
@@ -787,7 +702,7 @@ function LaserSilkPreset() {
 
   return <mesh><planeGeometry args={[viewport.width, viewport.height]} /><shaderMaterial ref={materialRef} {...shader} /></mesh>
 }
-function SonarBloomPreset() {
+function ChromaticBurstPreset() {
   const materialRef = useRef<THREE.ShaderMaterial>(null!)
   const viewport = useThree((state) => state.viewport)
   const peaks = useRef(new Float64Array(7).fill(0.05))
@@ -924,137 +839,294 @@ function SonarBloomPreset() {
   return <mesh><planeGeometry args={[viewport.width, viewport.height]} /><shaderMaterial ref={materialRef} {...shader} /></mesh>
 }
 
+// Waveform width for the time-domain presets. Must match the extension's
+// time-domain tap and emberAnalyser.ts' FFT_SIZE (both 2048).
+const WAVE_SIZE = 2048
 
-function FractalEmberPreset() {
+/**
+ * Shared waveform source for the time-domain presets (Fractal Ember, AM Preset).
+ * Owns the 2048-sample buffer + DataTexture, refills it each frame from the
+ * extension tab-capture (when live) or the dedicated local AnalyserNode tap,
+ * and releases the tap + texture on unmount.
+ * `alpha` is the temporal-smoothing factor: 1 = replace (raw trace),
+ * <1 = exponential blend toward the newest samples (calmer, flowing wave).
+ */
+function useWaveTrace() {
+  const tex = useMemo(() => {
+    const data = new Uint8Array(WAVE_SIZE).fill(128) // 128 = silence
+    const t = new THREE.DataTexture(data, WAVE_SIZE, 1, THREE.RedFormat, THREE.UnsignedByteType)
+    t.magFilter = THREE.LinearFilter
+    t.minFilter = THREE.LinearFilter
+    t.needsUpdate = true
+    return t
+  }, [])
+  const buf = useMemo(() => tex.image.data as Uint8Array, [tex])
+  const scratch = useRef(new Uint8Array(WAVE_SIZE))
+
+  useEffect(() => () => {
+    teardownEmberWaveAnalyser()
+    tex.dispose()
+  }, [tex])
+
+  const refresh = useCallback((alpha: number) => {
+    const raw = scratch.current
+    // Extension tab-capture wins (same precedence as audio.ts): it reflects
+    // the actual audible source (Spotify SDK or captured tab audio) even when
+    // a stale local AnalyserNode from an earlier file session is still wired
+    // into the graph (that tap reads silence once the local file is paused).
+    const ext = getExtensionWaveData()
+    if (ext) {
+      raw.set(ext.subarray(0, WAVE_SIZE))
+    } else {
+      const waveAnalyser = getEmberWaveAnalyser()
+      if (waveAnalyser) waveAnalyser.getByteTimeDomainData(raw)
+      else raw.fill(128) // no audio source yet — hold a flat silence line
+    }
+    if (alpha >= 1) {
+      buf.set(raw)
+    } else {
+      for (let i = 0; i < WAVE_SIZE; i++) buf[i] = buf[i] + (raw[i] - buf[i]) * alpha
+    }
+    tex.needsUpdate = true
+  }, [buf, tex])
+
+  return { tex, refresh }
+}
+
+function WaveformPreset() {
   const materialRef = useRef<THREE.ShaderMaterial>(null!)
   const viewport = useThree((state) => state.viewport)
-  const peaks = useRef(new Float64Array(3).fill(0.03))
-  const bandsScratch = useMemo(() => ({ bass: 0, mid: 0, treble: 0 }), [])
-  const work = useMemo(() => ({
-    raw: new Float64Array(3),
-    norm: new Float64Array(3),
-    target: new Float64Array(3),
-  }), [])
+
+  const { tex: waveTex, refresh } = useWaveTrace()
 
   const shader = useMemo(() => ({
     uniforms: {
-      uTime: { value: 0 }, uBass: { value: 0 }, uMid: { value: 0 }, uTreble: { value: 0 },
-      uHueShift: { value: 200 }, uIntensity: { value: 1.5 }, uComplexity: { value: 1 }, uAspect: { value: 1 },
+      uTime: { value: 0 },
+      uBass: { value: 0 },
+      uWave: { value: waveTex },
+      uAspect: { value: 1 },
     },
-    vertexShader: 'varying vec2 vUv; void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
-    fragmentShader: `
+    vertexShader: `
       varying vec2 vUv;
-      uniform float uTime,uBass,uMid,uTreble,uHueShift,uIntensity,uComplexity,uAspect;
-
-      float hash(vec2 p){
-        vec3 p3=fract(vec3(p.xyx)*0.1031);
-        p3+=dot(p3,p3.yzx+33.33);
-        return fract((p3.x+p3.y)*p3.z);
-      }
-      float vnoise(vec2 p){
-        vec2 i=floor(p), f=fract(p);
-        vec2 u=f*f*(3.0-2.0*f);
-        return mix(mix(hash(i),hash(i+vec2(1.,0.)),u.x),
-                   mix(hash(i+vec2(0.,1.)),hash(i+vec2(1.,1.)),u.x),u.y);
-      }
-      float fbm(vec2 p){
-        float v=0., a=0.55;
-        for(int i=0;i<5;i++){ v+=a*vnoise(p); p=p*2.03+vec2(7.3,-4.1); a*=0.55; }
-        return v;
-      }
-      vec3 hsv2rgb(vec3 c){
-        vec4 K=vec4(1.0,2.0/3.0,1.0/3.0,3.0);
-        vec3 p=abs(fract(c.xxx+K.xyz)*6.0-K.www);
-        return c.z*mix(K.xxx,clamp(p-K.xxx,0.0,1.0),c.y);
-      }
-      // cheap film grain
-      float grain(vec2 p, float t){
-        return hash(p*vec2(1000.0,1000.0)+t*37.0);
-      }
-
-      void main(){
-        // BASS: slow "breathing" zoom — the cover feels like it's inhaling
-        float zoom = 1.0 + uBass * 0.06;
-        vec2 p=(vUv-0.5)*2.0*zoom; p.x*=uAspect;
-
-        // very slow base drift — this is a LOOP, not a reactive spike-fest
-        float t=uTime*0.035;
-        float detail=1.4+uComplexity*0.5;
-
-        // painterly domain-warp, mid energy adds gentle turbulence (not violent)
-        vec2 q=vec2(fbm(p*detail+vec2(0.0,t*0.6)+uMid*0.10),
-                    fbm(p*detail+vec2(t*0.5,0.0)-uMid*0.08));
-        vec2 r=vec2(fbm(p*detail*0.8+q*1.4+vec2(t*0.3,-t*0.2)),
-                    fbm(p*detail*0.8+q*1.4-vec2(t*0.2,t*0.25)));
-        float f=fbm(p*detail+r*1.3+t*0.1);
-
-        // muted, cover-art palette (dusk / vinyl tones), hue-shiftable
-        float hs=uHueShift/360.0;
-        vec3 shadow = hsv2rgb(vec3(fract(hs+0.60),0.55,0.10));
-        vec3 mid1   = hsv2rgb(vec3(fract(hs+0.02),0.65,0.35));
-        vec3 mid2   = hsv2rgb(vec3(fract(hs+0.10),0.55,0.55));
-        vec3 highlt = hsv2rgb(vec3(fract(hs+0.15),0.35,0.85));
-
-        vec3 col = mix(shadow, mid1, smoothstep(0.25,0.55,f));
-        col = mix(col, mid2, smoothstep(0.50,0.75,f + uMid*0.12));
-        col = mix(col, highlt, smoothstep(0.68,0.92,f)*(0.5+0.5*r.x));
-
-        // soft vignette like a printed sleeve
-        float vig = 1.0 - smoothstep(0.7,1.5,dot(p,p))*0.6;
-        col *= vig;
-
-        // TREBLE: rare, soft light glints drifting across the surface — not sparkle-spam
-        float glintField = fbm(p*3.5 - t*2.0 + 11.0);
-        float glint = smoothstep(0.80,0.94,glintField) * pow(uTreble,1.6);
-        col += highlt * glint * 0.8;
-
-        // BASS: gentle overall glow pulse, slow attack feel
-        col *= 1.0 + uBass*0.15;
-
-        // film grain + subtle chromatic fringing for that "physical print" feel
-        float g = (grain(vUv, uTime) - 0.5) * 0.035;
-        col += g;
-        col.r += 0.004*sin(t*3.0);
-        col.b -= 0.004*sin(t*3.0);
-
-        col *= uIntensity * 0.95;
-        col = col / (1.0 + col*0.5);
-
-        gl_FragColor = vec4(col,1.0);
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
       }
     `,
-  }), [])
+    fragmentShader: `
+      varying vec2 vUv;
+      uniform float uTime, uBass, uAspect;
+      uniform sampler2D uWave;   // 0..1, 0.5 = silence
 
-  useFrame((state, delta) => {
-    const dt = Math.min(delta, 0.05)
-    const b = readBands(getFreqData(), bandsScratch)
-    const { sensitivity, hueShift, intensity, speed, complexity } = useStore.getState().params
+      void main() {
+        vec2 p = (vUv - 0.5) * 2.0;
+        p.x *= uAspect;
+
+        float amp = 0.05 + uBass * 0.45;
+
+        // Plot real audio: x position -> sample in the rolling window
+        float t  = vUv.x;
+        float s  = texture2D(uWave, vec2(t, 0.5)).r;
+        float sL = texture2D(uWave, vec2(t - 0.002, 0.5)).r;
+        float sR = texture2D(uWave, vec2(t + 0.002, 0.5)).r;
+
+        float y = (s - 0.5) * 2.0 * amp;
+
+        // Keep your perpendicular-distance trick (still needed for thick
+        // consistent strokes on steep transients like kick drums)
+        float dsdt = (sR - sL) / 0.004;
+        float dydx = amp * dsdt / uAspect;
+        float dist = abs(p.y - y) / sqrt(1.0 + dydx * dydx);
+
+        float thickness = 0.001 + uBass * 0.01;
+        float line = 1.0 - smoothstep(thickness - 0.004, thickness, dist);
+
+        gl_FragColor = vec4(vec3(line), 1.0);
+      }
+    `,
+  }), [waveTex])
+
+  useFrame((state) => {
+    const { sensitivity, speed } = useStore.getState().params
+    const b = readBands(getFreqData()) // shared bass/mid/treble bands, unchanged
+
+    refresh(1) // raw time-domain trace → texture
+
     const u = materialRef.current.uniforms
     u.uTime.value = state.clock.elapsedTime * speed
-    u.uHueShift.value = hueShift
-    u.uIntensity.value = intensity
-    u.uComplexity.value = complexity
+    u.uBass.value = Math.min(b.bass * sensitivity, 1.0)
     u.uAspect.value = viewport.width / viewport.height
-
-    // gentle auto-gain, but slower release than the "hype" presets —
-    // this preset should never feel jittery
-    const { raw, norm, target } = work
-    raw[0] = b.bass; raw[1] = b.mid; raw[2] = b.treble
-    const pk = peaks.current
-    for (let i = 0; i < 3; i++) {
-      pk[i] = Math.max(pk[i] - pk[i] * dt * 0.15, raw[i], 0.03)
-      norm[i] = Math.min(raw[i] / pk[i], 1)
-      target[i] = Math.pow(Math.min(norm[i] * sensitivity, 1), 1.3)
-      const key = BAND_UNIFORMS[i]
-      const cur = u[key].value as number
-      const k = target[i] > cur
-        ? 1 - Math.exp(-dt * 3)   // slow attack — no snap, everything eases in
-        : 1 - Math.exp(-dt * 1.5) // even slower release — this loops, it doesn't pulse
-      u[key].value = cur + (target[i] - cur) * k
-    }
   })
 
-  return <mesh><planeGeometry args={[viewport.width, viewport.height]} /><shaderMaterial ref={materialRef} {...shader} /></mesh>
+  return (
+    <mesh>
+      <planeGeometry args={[viewport.width, viewport.height]} />
+      <shaderMaterial ref={materialRef} {...shader} />
+    </mesh>
+  )
+}
+
+/**
+ * AM Preset — Fractal Ember's time-domain waveform, but rendered as a calm,
+ * flowing trace: heavy temporal smoothing (no per-frame "static"), a slow
+ * attack/release amplitude envelope, and a soft white line with a hue-shift
+ * bloom on a black background.
+ */
+function AMPreset() {
+  const materialRef = useRef<THREE.ShaderMaterial>(null!)
+  const viewport = useThree((state) => state.viewport)
+  const { tex: waveTex, refresh } = useWaveTrace()
+  const env = useRef(0)
+  const glow = useMemo(() => new THREE.Color(), [])
+
+  const shader = useMemo(() => ({
+    uniforms: {
+      uWave: { value: waveTex },
+      uAspect: { value: 1 },
+      uAmp: { value: 0.62 },
+      uGlow: { value: glow },
+      uGlowAmt: { value: 0.1 },
+    },
+
+    vertexShader: `
+      varying vec2 vUv;
+
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+
+    fragmentShader: `
+      varying vec2 vUv;
+
+      uniform sampler2D uWave;
+      uniform float uAspect;
+      uniform float uAmp;
+      uniform float uGlowAmt;
+      uniform vec3 uGlow;
+
+      float sampleSmooth(float x) {
+        x = clamp(x, 0.0, 1.0);
+
+        float s = 0.0;
+      
+        s += texture2D(uWave, vec2(x - 0.050, 0.5)).r * 0.025;
+        s += texture2D(uWave, vec2(x - 0.040, 0.5)).r * 0.040;
+        s += texture2D(uWave, vec2(x - 0.030, 0.5)).r * 0.065;
+        s += texture2D(uWave, vec2(x - 0.020, 0.5)).r * 0.095;
+        s += texture2D(uWave, vec2(x - 0.012, 0.5)).r * 0.120;
+        s += texture2D(uWave, vec2(x - 0.006, 0.5)).r * 0.135;
+        s += texture2D(uWave, vec2(x,        0.5)).r * 0.140;
+        s += texture2D(uWave, vec2(x + 0.006, 0.5)).r * 0.135;
+        s += texture2D(uWave, vec2(x + 0.012, 0.5)).r * 0.120;
+        s += texture2D(uWave, vec2(x + 0.020, 0.5)).r * 0.095;
+        s += texture2D(uWave, vec2(x + 0.030, 0.5)).r * 0.065;
+        s += texture2D(uWave, vec2(x + 0.040, 0.5)).r * 0.040;
+        s += texture2D(uWave, vec2(x + 0.050, 0.5)).r * 0.025;
+
+        return s;
+      }
+
+      void main() {
+        vec2 p = (vUv - 0.5) * 2.0;
+        p.x *= uAspect;
+
+        float mirrorX = abs(vUv.x - 0.5) * 2.0;
+        float s = sampleSmooth(mirrorX);
+
+        float mirrorXLeft = abs((vUv.x - 0.018) - 0.5) * 2.0;
+        float mirrorXRight = abs((vUv.x + 0.018) - 0.5) * 2.0;
+        
+        float sL = sampleSmooth(mirrorXLeft);
+        float sR = sampleSmooth(mirrorXRight);
+
+        float y = (s - 0.5) * 2.0 * uAmp;
+
+        float dsdt = (sR - sL) / 0.036;
+        float dydx = uAmp * dsdt / uAspect;
+
+        float dist = abs(p.y - y) / sqrt(1.0 + dydx * dydx);
+
+        // ── SILKY SMOOTH ANTI-ALIASING ───
+        float aa = fwidth(dist) * 1.5; // Boost anti-aliasing
+
+        // Wide smoothstep range for buttery soft edges
+        float core = 1.0 - smoothstep(
+          0.002 - aa,  // Inner edge (very thin core)
+          0.008 + aa,  // Outer edge (soft fade)
+          dist
+        );
+
+        // Extra soft bloom for that silky feel
+        float bloom = exp(-dist * dist * 350.0);
+        float softGlow = exp(-dist * dist * 80.0);
+
+        vec3 col = vec3(0.0);
+
+        // Layer the glow for smoothness
+        col += uGlow * bloom * uGlowAmt * 0.60;
+        col += uGlow * softGlow * uGlowAmt * 0.25;
+        col += vec3(1.0) * core * (0.85 + uGlowAmt * 0.15);
+
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `,
+  }), [waveTex, glow])
+
+  useFrame((_state, delta) => {
+    const {
+      sensitivity,
+      hueShift,
+      intensity
+    } = useStore.getState().params
+
+    const b = readBands(getFreqData())
+    const dt = Math.min(delta, 0.05)
+
+    refresh(0.055)
+
+    const target = Math.min(
+      (
+        b.bass * 0.45 +
+        b.mid * 0.65 +
+        b.treble * 0.10
+      ) * sensitivity,
+      1
+    )
+
+    const attack = 1 - Math.exp(-dt * 1.25)
+    const release = 1 - Math.exp(-dt * 0.65)
+
+    const k = target > env.current ? attack : release
+
+    env.current += (target - env.current) * k
+
+    const u = materialRef.current.uniforms
+
+    u.uAmp.value = 0.58 + env.current * 0.48
+    u.uAspect.value = viewport.width / viewport.height
+
+    glow.setHSL(
+      (hueShift % 360) / 360,
+      0.85,
+      0.6
+    )
+
+    u.uGlowAmt.value = Math.min(intensity * 0.2, 1.2)
+  })
+
+  return (
+    <mesh>
+      <planeGeometry args={[viewport.width, viewport.height]} />
+      <shaderMaterial
+        ref={materialRef}
+        {...shader}
+        transparent
+        depthWrite={false}
+      />
+    </mesh>
+  )
 }
 
 function useCanvasSource() {
@@ -1226,26 +1298,26 @@ function ActivePreset() {
   const currentPreset = useStore((state) => state.currentPreset)
 
   switch (currentPreset) {
-    case 'arcticSwirl':
-      return <ArcticSwirlPreset />
+    case 'amPreset':
+      return <AMPreset />
     case 'auroraSilk':
       return <AuroraSilkPreset />
     case 'brat':
       return null
     case 'canvasAmbient':
       return <CanvasAmbientPreset />
-    case 'fractalEmber':
-      return <FractalEmberPreset />
-    case 'laserSilk':
-      return <LaserSilkPreset />
-    case 'liquidDrift':
-      return <LiquidDriftPreset />
-    case 'mellowDrift':
-      return <MellowDriftPreset />
-    case 'prismaticGarden':
-      return <PrismaticBloomPreset />
-    case 'sonarBloom':
-      return <SonarBloomPreset />
+    case 'chromaticBurst':
+      return <ChromaticBurstPreset />
+    case 'mellow1':
+      return <Mellow1Preset />
+    case 'mellow2':
+      return <Mellow2Preset />
+    case 'prismaticTempest':
+      return <PrismaticTempestPreset />
+    case 'acidWash':
+      return <AcidWashPreset />
+    case 'waveform':
+      return <WaveformPreset />
     default:
       return <CanvasAmbientPreset />
   }

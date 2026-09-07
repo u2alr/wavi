@@ -8,13 +8,19 @@ const freqData = new Uint8Array(256)
 // Frame-stamp cache: only call getByteFrequencyData once per animation frame
 let lastFillTime = -1
 let extensionFreqData: Uint8Array | null = null
+let extensionWaveData: Uint8Array | null = null
 
 export function setExtensionAudioData(bins: number[]) {
   extensionFreqData = Uint8Array.from(bins.slice(0, freqData.length))
 }
 
+export function setExtensionWaveData(wave: number[]) {
+  extensionWaveData = Uint8Array.from(wave)
+}
+
 export function clearExtensionAudioData() {
   extensionFreqData = null
+  extensionWaveData = null
 }
 
 export function initAudio(file: File): HTMLAudioElement {
@@ -116,6 +122,10 @@ export function hasExtensionAudio(): boolean {
   return extensionFreqData !== null
 }
 
+export function getExtensionWaveData(): Uint8Array | null {
+  return extensionWaveData
+}
+
 export function getAudioSourceMode(): 'live' | 'idle' {
   if (extensionFreqData) return 'live'
   if (analyser) return 'live'
@@ -130,4 +140,8 @@ export function setAudioVolume(volume: number) {
 export function getSampleRate(): number {
   // fallback matters when extension audio is active and no real AudioContext exists yet
   return audioContext?.sampleRate ?? 48000
+}
+
+export function getSharedAnalyserNode(): AnalyserNode | null {
+  return analyser
 }

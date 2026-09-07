@@ -1,7 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 import { useStore } from '../store'
 
-const SAFE_PRESET = 'mellowDrift'
+const SAFE_PRESET = 'mellow2'
 
 interface State {
   error: Error | null

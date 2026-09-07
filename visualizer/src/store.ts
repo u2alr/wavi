@@ -11,6 +11,26 @@ export interface PresetParams {
   thickness: number
 }
 
+// Old preset ids renamed in the "rename the presets" pass. URLs/saved presets
+// from before the rename keep working by mapping through this on load.
+export const PRESET_ID_RENAMES: Record<string, string> = {
+  arcticSwirl: 'prismaticTempest',
+  fractalEmber: 'waveform',
+  laserSilk: 'acidWash',
+  liquidDrift: 'mellow1',
+  mellowDrift: 'mellow2',
+  sonarBloom: 'chromaticBurst',
+}
+
+// Preset ids that no longer exist. Anything referencing these is dropped.
+export const REMOVED_PRESETS = new Set(['prismaticGarden'])
+
+/** Resolve a possibly-legacy preset id to its current id ('' if removed). */
+export function resolvePresetId(id: string): string {
+  if (REMOVED_PRESETS.has(id)) return ''
+  return PRESET_ID_RENAMES[id] ?? id
+}
+
 export interface SavedPreset {
   id: string
   name: string
@@ -97,7 +117,11 @@ const DEFAULT_PARAMS: PresetParams = {
 function loadSavedPresets(): SavedPreset[] {
   try {
     const raw = localStorage.getItem('viz-presets')
-    return raw ? JSON.parse(raw) : []
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as SavedPreset[]
+    return parsed
+      .map((p) => ({ ...p, presetType: resolvePresetId(p.presetType) }))
+      .filter((p) => p.presetType !== '')
   } catch { return [] }
 }
 
@@ -106,7 +130,7 @@ function persistPresets(presets: SavedPreset[]) {
 }
 
 export const useStore = create<Store>((set, get) => ({
-  currentPreset: 'mellowDrift',
+  currentPreset: 'mellow2',
   params: { ...DEFAULT_PARAMS },
   playlist: [],
   currentTrackIndex: -1,

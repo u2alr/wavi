@@ -30,14 +30,6 @@
   --panel-hover: rgba(17, 22, 30, 0.05);
   --panel-pressed: rgba(17, 22, 30, 0.09);
 
-  /* Spacing scale */
-  --sp-1: 4px;
-  --sp-2: 8px;
-  --sp-3: 12px;
-  --sp-4: 16px;
-  --sp-5: 20px;
-  --sp-6: 24px;
-
   /* Error / Danger */
   --wavi-error: #ff3b30;
   --wavi-error-surface: #fdecec;
@@ -45,10 +37,6 @@
   --wavi-error-border: #f3b8b8;
 
   /* Radius */
-  --wavi-radius-sm: 6px;
-  --wavi-radius-md: 8px;
-  --wavi-radius-lg: 10px;
-  --panel-radius-card: 14px;
   --panel-radius-well: 10px;
 
   /* Motion */
@@ -620,7 +608,7 @@ body::before {
   text-overflow: ellipsis;
   flex: 1;
   min-width: 0;
-  padding-left: 8px;
+  padding-left: 4px;
 }
 
 .panel-collapse-btn {
@@ -4547,4 +4535,164 @@ input[type="range"]::-moz-range-thumb {
   max-width: 44px;
   min-width: 34px;
   opacity: 1;
+}
+
+/* ═══ SIDE PANEL POLISH — flat dark inspector ═════════════════════════
+   Appended last so every rule wins the earlier light, overhaul, and
+   MiniCorp-dark generations.
+   1. Header hosts the live preset picker (caption + compact select).
+   2. Audio source & Visualizer surfaces flatten: no nested boxes, only
+      hairline separators between rows.
+   3. Collapsed panel pulls its children out of the tab order.
+   4. Touch & motion additions.
+*/
+
+/* 1. Header: contextual preset caption + picker. */
+.panel-header {
+  min-height: 64px;
+  align-items: center;
+}
+
+.panel-header .panel-header-eyebrow {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.25;
+  text-transform: none;
+  color: var(--panel-muted);
+}
+
+.panel-header-copy {
+  justify-content: center;
+  gap: 3px;
+}
+
+.panel-preset {
+  min-width: 0;
+}
+
+.panel-preset .panel-select {
+  flex: 1;
+}
+
+.panel-preset .panel-select-trigger {
+  height: 30px;
+  min-height: 30px;
+  padding: 3px 3px 3px 9px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 620;
+}
+
+.panel-preset .panel-select-popover {
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+}
+
+/* 2. Audio source: flat rows on the panel surface. */
+.audio-source-group .ctrl-group-body-inner {
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  margin: 0;
+  padding: 4px 12px 14px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.audio-source-group .spotify-user,
+.audio-source-group .spotify-track-list,
+.audio-source-group .spotify-empty {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.audio-source-group .spotify-user {
+  margin: 0;
+  padding: 2px 0 10px;
+  border-bottom: 1px solid var(--panel-line);
+}
+
+.audio-source-group .xp-btn.primary.spotify-connect-btn {
+  width: 100%;
+  justify-content: center;
+}
+
+.audio-connect-hint {
+  margin: -2px 0 2px;
+}
+
+/* 2b. Visualizer engine: sliders & brat rows lose their boxes. */
+.visualizer-group .ctrl-group-body-inner {
+  gap: 4px;
+}
+
+.visualizer-group .sliders-container {
+  padding: 2px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+}
+
+.visualizer-group .ctrl-row {
+  padding: 0;
+}
+
+.visualizer-group .ctrl-row + .ctrl-row {
+  border-top-color: var(--panel-line);
+}
+
+.visualizer-group .brat-bg-toggle {
+  margin: 0;
+  padding: 8px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.visualizer-group .brat-bg-toggle + .brat-bg-toggle {
+  border-top: 1px solid var(--panel-line);
+}
+
+/* 3. Collapse must remove children from the tab order. */
+.control-panel.collapsed .control-panel-scroll,
+.control-panel.collapsed .panel-header,
+.control-panel.collapsed .panel-footer {
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+  transition: opacity var(--panel-dur) ease, visibility 0s linear var(--panel-dur);
+}
+
+.control-panel:not(.collapsed) .control-panel-scroll,
+.control-panel:not(.collapsed) .panel-header,
+.control-panel:not(.collapsed) .panel-footer {
+  visibility: visible;
+  transition: opacity var(--panel-dur) ease, visibility 0s;
+}
+
+/* 4. Touch & motion. */
+@media (pointer: coarse) {
+  .panel-preset .panel-select-trigger {
+    height: 40px;
+    min-height: 40px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .control-panel.collapsed .control-panel-scroll,
+  .control-panel.collapsed .panel-header,
+  .control-panel.collapsed .panel-footer,
+  .control-panel:not(.collapsed) .control-panel-scroll,
+  .control-panel:not(.collapsed) .panel-header,
+  .control-panel:not(.collapsed) .panel-footer {
+    transition: opacity 0.01ms linear, visibility 0s linear;
+  }
 }
