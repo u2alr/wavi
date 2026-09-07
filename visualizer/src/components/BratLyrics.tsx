@@ -1,15 +1,62 @@
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store'
 import { getAudioElement } from '../audio'
-import { fetchLyrics, guessFromName, type LyricLine } from '../lyrics'
+import { fetchLyrics, guessFromName, toTimedWords, type LyricLine } from '../lyrics'
 import { usePlaybackTracker } from '../usePlaybackTracker'
 
 /** Shared with the Now Playing bar — both clocks must agree on what "drifted" means. */
 const LYRIC_SYNC_THRESHOLD_MS = 2000
 
-export default function BratLyrics({ active }: { active: boolean }) {
+// Isolated 20Hz progress bar — it owns the playback-tracker clock, so ticks
+// re-render this memoized child only, never the lyric text tree. The parent
+// reads the clock through a mutable ref for its RAF loop and sync snaps.
+interface BratClock {
+  current: number
+  resync: (ms: number) => void
+}
+
+const BratProgress = memo(function BratProgress({
+  playing,
+  trackId,
+  durationMs,
+  whiteBg,
+  clock,
+}: {
+  playing: boolean
+  trackId: string | null
+  durationMs: number
+  whiteBg: boolean
+  clock: BratClock
+}) {
+  const { currentTime, progress, resync } = usePlaybackTracker(playing, trackId, durationMs)
+  useEffect(() => {
+    clock.current = currentTime
+  }, [clock, currentTime])
+  useEffect(() => {
+    clock.resync = resync
+  }, [clock, resync])
+  return (
+    <div
+      className="brat-progress"
+      style={{
+        width: `${progress}%`,
+        background: whiteBg ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.5)',
+      }}
+    />
+  )
+})
+
+export default function BratLyrics({
+  active,
+  variant,
+}: {
+  active: boolean
+  variant: 'line' | 'karaoke'
+}) {
   const [lines, setLines] = useState<LyricLine[]>([])
-  const [idx, setIdx] = useState(-1)
+  // Packed sync key: lineIdx * 1000 + wordIdx (-1 = nothing). One state
+  // update per line/word change instead of two, still guarded below.
+  const [key, setKey] = useState(-1)
   const [lyricSynced, setLyricSynced] = useState(true)
   const trackName = useStore((s) => s.trackName)
   const track = useStore((s) => s.spotifyCurrentTrack)
@@ -17,19 +64,10 @@ export default function BratLyrics({ active }: { active: boolean }) {
   const playbackPosition = useStore((s) => s.playbackPosition)
   const whiteBg = useStore((s) => s.bratWhiteBg)
 
-  // Self-contained playback tracker — counts time internally, independent of Spotify SDK.
-  // Its currentTime is the Spotify clock (resets on track id change).
-  const { currentTime, progress, resync } = usePlaybackTracker(
-    playing,
-    track?.id ?? null,
-    track?.duration_ms ?? 0
-  )
-
-  // Mirror of the smooth clock for the sync checker (avoids re-subscribing every frame).
-  const trackerTimeRef = useRef(currentTime)
-  useEffect(() => {
-    trackerTimeRef.current = currentTime
-  })
+  // Clock owned by the memoized progress child — parent never subscribes
+  // to its ticks, so lyric text only re-renders on line/track changes.
+  // The container object identity is stable for the component lifetime.
+  const clock = useRef<BratClock>({ current: 0, resync: () => {} }).current
 
   // Ref mirror so the resume-edge snap always sees the current flag.
   const lyricSyncedRef = useRef(lyricSynced)
@@ -53,7 +91,7 @@ export default function BratLyrics({ active }: { active: boolean }) {
 
     if (!meta.title) {
       setLines([])
-      setIdx(-1)
+      setKey(-1)
       return () => controller.abort()
     }
 
@@ -61,7 +99,7 @@ export default function BratLyrics({ active }: { active: boolean }) {
       if (controller.signal.aborted) return
       setLines(res ? res.lines : [])
       setLyricSynced(res ? res.synced : true)
-      setIdx(-1)
+      setKey(-1)
     }).catch(() => { /* aborted */ })
 
     return () => controller.abort()
@@ -78,10 +116,10 @@ export default function BratLyrics({ active }: { active: boolean }) {
   useEffect(() => {
     if (!trackId || !playing) return
     const threshold = lyricSynced ? LYRIC_SYNC_THRESHOLD_MS : LYRIC_SYNC_THRESHOLD_MS * 3
-    if (Math.abs(trackerTimeRef.current - playbackPosition) > threshold) {
-      resync(playbackPosition)
+    if (Math.abs(clock.current - playbackPosition) > threshold) {
+      clock.resync(playbackPosition)
     }
-  }, [playbackPosition, trackId, playing, lyricSynced, resync])
+  }, [playbackPosition, trackId, playing, lyricSynced])
 
   // Resume-edge snap: no SDK position arrives exactly at resume, so catch
   // the transition itself instead of waiting for the next event.
@@ -92,54 +130,97 @@ export default function BratLyrics({ active }: { active: boolean }) {
     if (!resumed || !trackId) return
     const sdkPos = useStore.getState().playbackPosition
     const threshold = lyricSyncedRef.current ? LYRIC_SYNC_THRESHOLD_MS : LYRIC_SYNC_THRESHOLD_MS * 3
-    if (Math.abs(trackerTimeRef.current - sdkPos) > threshold) {
-      resync(sdkPos)
+    if (Math.abs(clock.current - sdkPos) > threshold) {
+      clock.resync(sdkPos)
     }
-  }, [playing, trackId, resync])
+  }, [playing, trackId])
+
+  // Word windows per line. With the updated lyrics module this is a
+  // passthrough for `line.words` (real LRCLib/NetEase word timing) and
+  // only interpolates for line-level sources. Memoized on fetch — never
+  // recomputed per frame.
+  const wordLines = useMemo(() => lines.map(toTimedWords), [lines])
 
   // Line sync loop — one persistent RAF while active (reads the clock
   // through a ref so tracker ticks don't tear the loop down 20x/sec).
   // Spotify uses the playback tracker clock (resets on track change, so a
   // naturally-ending song can't leave the previous song's lyrics on screen).
+  // setKey is guarded: identical keys bail without scheduling a render.
+  const keyRef = useRef(key)
+  useEffect(() => {
+    keyRef.current = key
+  }, [key])
+
   useEffect(() => {
     if (!active) return
 
     let rafId = 0
     const tick = () => {
       const audio = getAudioElement()
-      const pos = trackId ? trackerTimeRef.current / 1000 : (audio?.currentTime ?? 0)
+      const pos = trackId ? clock.current / 1000 : (audio?.currentTime ?? 0)
       if (!(trackId ? !playing : audio?.paused)) {
-        setIdx(lines.findIndex((l) => pos >= l.start && pos < l.end))
+        const lineIdx = lines.findIndex((l) => pos >= l.start && pos < l.end)
+        let wordIdx = 0
+        if (variant === 'karaoke' && lineIdx >= 0) {
+          const words = wordLines[lineIdx]
+          // Highlight by START times, not start/end containment: both the
+          // interpolated timings (70ms inter-word gaps) and real word-level
+          // sources (LRCLib/NetEase) have gaps between words, and during a
+          // gap no word satisfies start<=pos<end — the old containment
+          // check made the "now" highlight flicker off every gap.
+          const started = words.reduce((n, w) => (pos >= w.start ? n + 1 : n), 0)
+          wordIdx = started === 0 ? 0 : Math.min(started - 1, words.length - 1)
+        }
+        const next = lineIdx < 0 ? -1 : lineIdx * 1000 + wordIdx
+        if (next !== keyRef.current) setKey(next)
       }
       rafId = requestAnimationFrame(tick)
     }
     rafId = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(rafId)
-  }, [active, lines, playing, trackId])
+  }, [active, lines, wordLines, playing, trackId, variant])
 
   // Static typography — no audio reactivity. (Blur values preserve the
   // original resting look.)
-  const current = idx >= 0 ? lines[idx] : null
+  const lineIdx = key >= 0 ? Math.floor(key / 1000) : -1
+  const wordIdx = key >= 0 ? key % 1000 : -1
+  const current = lineIdx >= 0 ? lines[lineIdx] : null
+  const currentWords = lineIdx >= 0 ? wordLines[lineIdx] : []
   const title = (track?.name || trackName || 'no track').toLowerCase()
   const artist = track?.artists?.[0]?.name?.toLowerCase() || ''
+  const karaoke = variant === 'karaoke'
 
   return (
-    <div style={{ position: 'absolute', inset: 0, background: whiteBg ? '#ffffff' : '#8ACE00', display: active ? 'flex' : 'none', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none', overflow: 'hidden', zIndex: 5 }}>
-      <style>{`
-        .brat-meta{position:absolute;top:26px;right:40px;font:600 14px Arial;color:#1c2400;text-transform:lowercase}
-        .brat-line{max-width:35%;text-align:justify;text-align-last:justify;font:700 clamp(26px,6vw,64px)/1.15 Arial,Helvetica,sans-serif;color:#0d1200;text-transform:lowercase}
-        .brat-next{margin-top:16px;font:400 14px Arial;color:rgba(13,18,0,.55);filter:blur(0.9px);text-transform:lowercase;max-width:70%;text-align:justify;text-align-last:justify}
-        .brat-progress{position:absolute;bottom:0;left:0;height:5px;background:${whiteBg ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.5)'};transition:width 0.1s linear}
-      `}</style>
-      <div className="brat-meta" style={{ filter: 'blur(0.4px)' }}>{title}{artist && ` – ${artist}`}</div>
-      <div
-        className="brat-line"
-        style={{ filter: 'blur(1.1px)' }}
-      >
-        {current ? current.text.toLowerCase() : '...'}
+    <div className="brat-overlay" style={{ background: whiteBg ? '#ffffff' : '#8ACE00', display: active ? 'flex' : 'none' }}>
+      <div className="brat-meta">{title}{artist && ` – ${artist}`}</div>
+      <div key={lineIdx} className="brat-line">
+        {current ? (
+          karaoke ? (
+            <span className="brat2-words">
+              {currentWords.map((w, i) => (
+                <Fragment key={i}>
+                  <span className={`brat2-w${i < wordIdx ? ' sung' : ''}${i === wordIdx ? ' now' : ''}`}>
+                    {w.text.toLowerCase()}
+                  </span>
+                  {i < currentWords.length - 1 ? ' ' : ''}
+                </Fragment>
+              ))}
+            </span>
+          ) : (
+            current.text.toLowerCase()
+          )
+        ) : (
+          '...'
+        )}
       </div>
-      {lines[idx + 1] && <div className="brat-next">{lines[idx + 1].text.toLowerCase()}</div>}
-      <div className="brat-progress" style={{ width: `${progress}%` }} />
+      {lines[lineIdx + 1] && <div key={lineIdx + 1} className="brat-next">{lines[lineIdx + 1].text.toLowerCase()}</div>}
+      <BratProgress
+        playing={playing}
+        trackId={trackId}
+        durationMs={track?.duration_ms ?? 0}
+        whiteBg={whiteBg}
+        clock={clock}
+      />
     </div>
   )
 }

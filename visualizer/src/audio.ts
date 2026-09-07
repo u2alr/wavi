@@ -3,6 +3,7 @@ let analyser: AnalyserNode | null = null
 let gainNode: GainNode | null = null
 let source: MediaElementAudioSourceNode | null = null
 let audioElement: HTMLAudioElement | null = null
+let audioObjectUrl: string | null = null
 const freqData = new Uint8Array(256)
 // Frame-stamp cache: only call getByteFrequencyData once per animation frame
 let lastFillTime = -1
@@ -30,6 +31,10 @@ export function initAudio(file: File): HTMLAudioElement {
     audioElement.pause()
     if (source) source.disconnect()
   }
+  if (audioObjectUrl) {
+    URL.revokeObjectURL(audioObjectUrl)
+    audioObjectUrl = null
+  }
 
   if (!audioContext || !analyser) {
     throw new Error('Failed to initialize audio context')
@@ -38,7 +43,8 @@ export function initAudio(file: File): HTMLAudioElement {
   if (audioContext.state === 'suspended') audioContext.resume().catch(console.error)
 
   audioElement = new Audio()
-  audioElement.src = URL.createObjectURL(file)
+  audioObjectUrl = URL.createObjectURL(file)
+  audioElement.src = audioObjectUrl
   audioElement.crossOrigin = 'anonymous'
 
   source = audioContext.createMediaElementSource(audioElement)
@@ -48,7 +54,7 @@ export function initAudio(file: File): HTMLAudioElement {
     gainNode.connect(audioContext.destination)
   }
 
-  audioElement.play()
+  audioElement.play().catch((err) => console.error('Audio play failed:', err))
   return audioElement
 }
 

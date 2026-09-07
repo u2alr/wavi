@@ -412,6 +412,101 @@ body::before {
   font-family: var(--font-mono);
 }
 
+/* Saved-looks section inside the Presets menu dropdown. */
+.menu-section-label {
+  padding: 4px 12px;
+  font-size: 10px;
+  font-weight: bold;
+  color: #666;
+  letter-spacing: 0.5px;
+}
+
+.menu-preset-actions {
+  display: flex;
+  gap: 8px;
+  padding: 2px 8px 6px;
+}
+
+.menu-preset-actions > * {
+  flex: 1;
+  min-height: 30px;
+}
+
+.menu-save-row {
+  display: flex;
+  gap: 8px;
+  padding: 0 8px 6px;
+}
+
+.menu-save-row .xp-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.menu-saved-list {
+  max-height: min(220px, 32vh);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.22) transparent;
+}
+
+.menu-saved-row {
+  gap: 4px;
+  cursor: default;
+}
+
+.menu-saved-load {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.menu-saved-load:focus-visible {
+  outline: 2px solid var(--wavi-accent);
+  outline-offset: -2px;
+}
+
+.menu-saved-del {
+  background: rgba(0, 0, 0, 0.05);
+  border: none;
+  padding: 0;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--xp-text-dim);
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: background var(--panel-dur) ease, color var(--panel-dur) ease;
+}
+
+.menu-saved-del:hover {
+  color: var(--wavi-error-text);
+  background: var(--wavi-error-surface);
+}
+
+.menu-saved-del:focus-visible {
+  outline: 2px solid var(--wavi-accent);
+  outline-offset: -2px;
+}
+
+.menu-saved-empty {
+  padding: 6px 12px 8px;
+  font-size: 12px;
+  color: var(--xp-text-dim);
+}
+
 /* ─── MAIN CONTENT LAYOUT ─── */
 .main-content {
   display: flex;
@@ -435,6 +530,26 @@ body::before {
   display: block;
   width: 100% !important;
   height: 100% !important;
+}
+
+/* Error-boundary fallback: covers the canvas area only, app chrome survives. */
+.scene-error-fallback {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: #020308;
+  color: #fff;
+}
+
+.scene-error-text {
+  margin: 0;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.75);
 }
 
 /* Soft edge rolloff: shaders run hot to the edge-centers (their vignettes
@@ -473,7 +588,8 @@ body::before {
 }
 
 .control-panel.collapsed .control-panel-scroll,
-.control-panel.collapsed .panel-header {
+.control-panel.collapsed .panel-header,
+.control-panel.collapsed .panel-footer {
   opacity: 0;
   pointer-events: none;
 }
@@ -504,6 +620,7 @@ body::before {
   text-overflow: ellipsis;
   flex: 1;
   min-width: 0;
+  padding-left: 8px;
 }
 
 .panel-collapse-btn {
@@ -1946,16 +2063,16 @@ select.xp-select:focus-visible, .xp-input:focus-visible,
   max-width: 26ch;
 }
 
-/* ─── AUDIO PLAYER BOX — Now Playing hero ─── */
+/* ─── AUDIO PLAYER BOX — Now Playing hero · dim opaque art bleed, flat matte ─── */
 .audio-player-box {
   display: flex;
   flex-direction: column;
-  gap: 7px;
-  border: 1px solid rgba(26, 36, 0, 0.1);
+  gap: 12px;
+  border: 1px solid var(--apb-edge, #c6ccd2);
   border-radius: 12px;
-  background: linear-gradient(to bottom, var(--apb-g1, rgba(238, 247, 216, 0.3)), var(--apb-g2, rgba(255, 255, 255, 0.32)));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--apb-g1, #c9ced4) 72%, black) 0%, color-mix(in srgb, var(--apb-g2, #dde1e5) 70%, black) 48%, color-mix(in srgb, var(--apb-g3, #aab1b9) 72%, black) 100%);
   padding: 9px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  box-shadow: 0 6px 18px var(--apb-glow, rgba(0, 0, 0, 0.14));
 }
 
 .apb-row {
@@ -2093,7 +2210,7 @@ select.xp-select:focus-visible, .xp-input:focus-visible,
 
 .apb-fill {
   height: 100%;
-  background: linear-gradient(to right, var(--wavi-accent), #6fa800);
+  background: linear-gradient(to right, color-mix(in srgb, var(--wavi-accent) 68%, black), color-mix(in srgb, #6fa800 68%, black));
   border-radius: 999px;
   transition: width 0.15s linear;
 }
@@ -2131,7 +2248,7 @@ select.xp-select:focus-visible, .xp-input:focus-visible,
   width: 30px;
   height: 30px;
   min-height: 30px;
-  box-shadow: 0 2px 8px rgba(110, 160, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.14);
 }
 
 .apb-volume {
@@ -3005,6 +3122,21 @@ select.xp-select:focus-visible, .xp-input:focus-visible,
   scroll-padding: 16px;
 }
 
+/* Static footer — pinned below the scroll area: player on top, auth beneath. */
+.panel-footer {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px 12px;
+
+  transition: opacity var(--panel-dur) ease;
+}
+
+.panel-footer .spotify-auth-bar {
+  margin-bottom: 0;
+}
+
 .control-panel-scroll::-webkit-scrollbar-thumb,
 .spotify-track-list::-webkit-scrollbar-thumb,
 .preset-list::-webkit-scrollbar-thumb,
@@ -3348,7 +3480,7 @@ select.xp-select:focus-visible,
 .spotify-track-title {
   font-size: 12.75px;
   line-height: 1.25;
-  font-weight: 670;
+  font-weight: 500;
 }
 
 .spotify-track-artist {
@@ -3391,13 +3523,38 @@ select.xp-select:focus-visible,
 
 .audio-player-box {
   position: relative;
-  gap: 9px;
+  gap: 1px;
   padding: 10px;
   border-radius: 12px;
   background:
-    linear-gradient(135deg, var(--apb-g1, rgba(138, 206, 0, 0.18)), rgba(255, 255, 255, 0.76) 48%, var(--apb-g2, rgba(65, 115, 190, 0.1))),
-    rgba(255, 255, 255, 0.72);
-  border-color: rgba(26, 36, 0, 0.12);
+    linear-gradient(135deg, color-mix(in srgb, var(--apb-g1, #c9ced4) 72%, black) 0%, color-mix(in srgb, var(--apb-g2, #dde1e5) 70%, black) 48%, color-mix(in srgb, var(--apb-g3, #aab1b9) 72%, black) 100%);
+  border: 1px solid var(--apb-edge, rgba(26, 36, 0, 0.25));
+  box-shadow: 0 6px 18px var(--apb-glow, rgba(0, 0, 0, 0.14));
+}
+
+/* Adaptive ink + solid control surfaces — beats every translucent default. */
+.audio-player-box .apb-title { color: var(--apb-ink, var(--xp-text)); }
+.audio-player-box .apb-artist,
+.audio-player-box .apb-time,
+.audio-player-box .apb-vol-val { color: var(--apb-dim, var(--xp-text-dim)); }
+.audio-player-box .apb-mute-btn { color: var(--apb-dim, var(--xp-text-dim)); }
+.audio-player-box .apb-eq span { background: var(--apb-ink, var(--wavi-accent)); }
+.audio-player-box .apb-eq { background: var(--apb-g3, #ffffff); }
+.audio-player-box .apb-volume {
+  background: var(--apb-g3, #ffffff);
+  border-color: var(--apb-edge, rgba(0, 0, 0, 0.06));
+}
+.audio-player-box .apb-bar { background: var(--apb-g3, rgba(26, 36, 0, 0.16)); }
+.audio-player-box .xp-btn:not(.primary) {
+  background: var(--apb-g3, #ffffff);
+  border-color: var(--apb-edge, rgba(0, 0, 0, 0.09));
+  color: var(--apb-ink, var(--xp-text));
+  box-shadow: none;
+}
+.audio-player-box .xp-btn:not(.primary):hover {
+  background: var(--apb-g3, #ffffff);
+  border-color: var(--apb-edge, rgba(0, 0, 0, 0.14));
+  filter: brightness(0.96);
 }
 
 .apb-row {
@@ -3449,7 +3606,7 @@ select.xp-select:focus-visible,
 }
 
 .apb-fill {
-  background: linear-gradient(90deg, #78b800, var(--wavi-accent), #b6e73f);
+  background: linear-gradient(90deg, color-mix(in srgb, #78b800 66%, black), color-mix(in srgb, var(--wavi-accent) 68%, black), color-mix(in srgb, #b6e73f 64%, black));
 }
 
 .apb-controls {
@@ -3497,7 +3654,7 @@ select.xp-select:focus-visible,
 
 .ctrl-row {
   min-height: 36px;
-  padding: 5px 8px;
+  padding: 0px 8px;
   gap: 8px;
 }
 
@@ -3920,8 +4077,33 @@ select.xp-select,
 
 .audio-player-box {
   background:
-    linear-gradient(135deg, rgba(10, 132, 255, 0.12), rgba(27, 27, 31, 0.98) 48%, rgba(255, 255, 255, 0.025)),
-    var(--panel-card-dark);
+    linear-gradient(135deg, color-mix(in srgb, var(--apb-g1, #3d4453) 68%, black) 0%, color-mix(in srgb, var(--apb-g2, #2b303c) 68%, black) 48%, color-mix(in srgb, var(--apb-g3, #17181d) 70%, black) 100%);
+  border: 1px solid var(--apb-edge, rgba(255, 255, 255, 0.14));
+  box-shadow: 0 6px 18px var(--apb-glow, rgba(0, 0, 0, 0.35));
+}
+
+.audio-player-box .apb-title { color: var(--apb-ink, #f4f6f8); }
+.audio-player-box .apb-artist,
+.audio-player-box .apb-time,
+.audio-player-box .apb-vol-val { color: var(--apb-dim, #a5a7ad); }
+.audio-player-box .apb-mute-btn { color: var(--apb-dim, #a5a7ad); }
+.audio-player-box .apb-eq span { background: var(--apb-ink, #0a84ff); }
+.audio-player-box .apb-eq { background: var(--apb-g3, #202126); }
+.audio-player-box .apb-volume {
+  background: var(--apb-g3, #202126);
+  border-color: var(--apb-edge, rgba(255, 255, 255, 0.14));
+}
+.audio-player-box .apb-bar { background: var(--apb-g3, rgba(255, 255, 255, 0.14)); }
+.audio-player-box .xp-btn:not(.primary) {
+  background: var(--apb-g3, #202126);
+  border-color: var(--apb-edge, rgba(255, 255, 255, 0.14));
+  color: var(--apb-ink, #f4f6f8);
+  box-shadow: none;
+}
+.audio-player-box .xp-btn:not(.primary):hover {
+  background: var(--apb-g3, #202126);
+  border-color: var(--apb-edge, rgba(255, 255, 255, 0.2));
+  filter: brightness(1.12);
 }
 
 .spotify-user,
@@ -4141,4 +4323,228 @@ input[type="range"]::-moz-range-thumb {
    escape downward (same trick the original cards used). */
 .ctrl-group {
   overflow-x: clip;
+}
+
+/* ─── BRAT OVERLAY (single source — no brat rules live in TSX) ─── */
+.brat-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 5;
+}
+
+.brat-overlay .brat-meta {
+  position: absolute;
+  top: 26px;
+  right: 40px;
+  font: 600 14px Arial, sans-serif;
+  color: #1c2400;
+  text-transform: lowercase;
+  filter: blur(0.4px);
+}
+
+.brat-overlay .brat-line {
+  max-width: 35%;
+  text-align: justify;
+  text-align-last: justify;
+  font: 700 clamp(26px, 6vw, 64px) / 1.15 Arial, Helvetica, sans-serif;
+  color: #0d1200;
+  text-transform: lowercase;
+  filter: blur(1.1px);
+  animation: brat-line-in 0.38s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+@keyframes brat-line-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+    filter: blur(8px);
+  }
+}
+
+.brat-overlay .brat-next {
+  margin-top: 16px;
+  font: 400 14px Arial, sans-serif;
+  color: rgba(13, 18, 0, 0.55);
+  filter: blur(0.9px);
+  text-transform: lowercase;
+  max-width: 70%;
+  text-align: justify;
+  text-align-last: justify;
+  animation: brat-next-in 0.3s ease-out;
+}
+
+@keyframes brat-next-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+.brat-overlay .brat-progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 5px;
+  transition: width 0.1s linear;
+}
+
+.brat-overlay .brat2-words {
+  display: inline;
+}
+
+.brat-overlay .brat2-w {
+  display: inline-block;
+  visibility: hidden;
+  transition: opacity 0.28s ease, transform 0.28s ease;
+}
+
+.brat-overlay .brat2-w.sung {
+  visibility: visible;
+  opacity: 1;
+}
+
+.brat-overlay .brat2-w.now {
+  visibility: visible;
+  opacity: 1;
+  animation: brat2-pop 0.24s cubic-bezier(0.2, 0.9, 0.25, 1.2);
+}
+
+@keyframes brat2-pop {
+  from { transform: scale(0.55); }
+  to { transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brat-overlay .brat-line,
+  .brat-overlay .brat-next {
+    animation: none;
+  }
+  .brat-overlay .brat2-w {
+    visibility: hidden;
+    opacity: 1;
+  }
+  .brat-overlay .brat2-w.sung,
+  .brat-overlay .brat2-w.now {
+    visibility: visible;
+    animation: none;
+  }
+}
+
+/* ─── NOW PLAYING legibility on any art tint (CSS-only) ───
+   The box background itself stays fully opaque and dimmed; inner
+   controls below are flat opaque mixes against --apb-g3 (no
+   transparent glass washes). Fallbacks assume the dark cascade
+   (which wins ties); sampled --apb-* vars override them. */
+
+/* Card EQ bars are gone from this card (pill dots live on the
+   fullscreen pill); the element is aria-hidden so nothing is lost. */
+.audio-player-box .apb-eq {
+  display: none;
+}
+
+/* Focus ring must read on lime tints too. */
+.audio-player-box .apb-track:focus-visible {
+  outline-color: var(--apb-ink, #0a84ff);
+}
+
+/* Progress: flat opaque ink-on-g3 track, dim accent fill, permanent thumb. */
+.audio-player-box .apb-bar {
+  background: color-mix(in srgb, var(--apb-ink, #f4f6f8) 22%, var(--apb-g3, #202126));
+  overflow: visible;
+}
+
+.audio-player-box .apb-fill {
+  position: relative;
+}
+
+.audio-player-box .apb-fill::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  transform: translate(50%, -50%);
+  background: var(--apb-ink, #f4f6f8);
+  box-shadow: 0 0 0 2px var(--apb-g3, #202126), 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+
+/* One button family: 10px radii, solid primary, flat opaque secondaries. */
+.audio-player-box .apb-transport .xp-btn {
+  border-radius: 10px;
+}
+
+.audio-player-box .apb-transport .xp-btn:not(.primary) {
+  background: color-mix(in srgb, var(--apb-ink, #f4f6f8) 16%, var(--apb-g3, #202126));
+  border-color: transparent;
+  color: var(--apb-ink, #f4f6f8);
+  box-shadow: none;
+}
+
+.audio-player-box .apb-transport .xp-btn:not(.primary):hover {
+  background: color-mix(in srgb, var(--apb-ink, #f4f6f8) 26%, var(--apb-g3, #202126));
+  border-color: transparent;
+  filter: none;
+}
+
+/* Quiet volume cluster: chromeless row, monochrome slider. */
+.audio-player-box .apb-volume {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.audio-player-box .apb-mute-btn {
+  width: 24px;
+  height: 24px;
+}
+
+.audio-player-box .apb-mute-btn:hover {
+  background: color-mix(in srgb, var(--apb-ink, #f4f6f8) 12%, transparent);
+}
+
+.audio-player-box input[type="range"]::-webkit-slider-runnable-track {
+  background: color-mix(in srgb, var(--apb-ink, #f4f6f8) 22%, transparent);
+}
+
+.audio-player-box input[type="range"]::-moz-range-track {
+  background: color-mix(in srgb, var(--apb-ink, #f4f6f8) 22%, transparent);
+}
+
+.audio-player-box input[type="range"]::-moz-range-progress {
+  background: var(--apb-ink, #f4f6f8);
+}
+
+.audio-player-box input[type="range"]::-webkit-slider-thumb {
+  background: #fff;
+  border: 1px solid var(--apb-ink, #f4f6f8);
+}
+
+.audio-player-box input[type="range"]::-moz-range-thumb {
+  background: #fff;
+  border: 1px solid var(--apb-ink, #f4f6f8);
+}
+
+/* % label: collapsed until actively dragging (or keyboard-focused). */
+.audio-player-box .apb-vol-val {
+  max-width: 0;
+  min-width: 0;
+  opacity: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  transition: max-width 0.2s ease, opacity 0.2s ease;
+}
+
+.audio-player-box .apb-volume-slider:active ~ .apb-vol-val,
+.audio-player-box .apb-volume:focus-within .apb-vol-val {
+  max-width: 44px;
+  min-width: 34px;
+  opacity: 1;
 }

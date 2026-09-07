@@ -51,6 +51,7 @@ interface Store {
   isMiniPlayer: boolean
   activeModal: 'help' | 'shortcuts' | null
   bratWhiteBg: boolean
+  bratKaraoke: boolean
   extensionStatus: '' | 'EXT LIVE' | 'EXT SILENT' | 'EXT READY' | 'EXT ERROR'
 
   setCurrentPreset: (p: string) => void
@@ -79,6 +80,7 @@ interface Store {
   deletePreset: (id: string) => void
   setVolume: (v: number) => void
   setBratWhiteBg: (b: boolean) => void
+  setBratKaraoke: (b: boolean) => void
   setExtensionStatus: (s: '' | 'EXT LIVE' | 'EXT SILENT' | 'EXT READY' | 'EXT ERROR') => void
 }
 
@@ -126,6 +128,7 @@ export const useStore = create<Store>((set, get) => ({
   savedPresets: loadSavedPresets(),
   volume: 1.0,
   bratWhiteBg: false,
+  bratKaraoke: false,
   extensionStatus: '' as '' | 'EXT LIVE' | 'EXT SILENT' | 'EXT READY' | 'EXT ERROR',
 
   setCurrentPreset: (p) => set({ currentPreset: p }),
@@ -151,6 +154,7 @@ export const useStore = create<Store>((set, get) => ({
   setTrackName: (name) => set({ trackName: name }),
   setVolume: (v) => set({ volume: v }),
   setBratWhiteBg: (b) => set({ bratWhiteBg: b }),
+  setBratKaraoke: (b) => set({ bratKaraoke: b }),
   setExtensionStatus: (s) => set({ extensionStatus: s }),
 
   savePreset: (name) => {

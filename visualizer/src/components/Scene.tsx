@@ -8,19 +8,22 @@ import { getSampleRate } from '../audio'
 
 const edgeCache = new Map<string, number[]>()
 
-function readBands(frequency: Uint8Array) {
+function readBands(frequency: Uint8Array, out = { bass: 0, mid: 0, treble: 0 }) {
   let bass = 0, mid = 0, treble = 0
   const bassEnd = Math.floor(frequency.length * 0.1)
   const midEnd = Math.floor(frequency.length * 0.4)
   for (let i = 0; i < bassEnd; i++) bass += frequency[i]
   for (let i = bassEnd; i < midEnd; i++) mid += frequency[i]
   for (let i = midEnd; i < frequency.length; i++) treble += frequency[i]
-  return {
-    bass: bass / (bassEnd * 255),
-    mid: mid / ((midEnd - bassEnd) * 255),
-    treble: treble / ((frequency.length - midEnd) * 255),
-  }
+  out.bass = bass / (bassEnd * 255)
+  out.mid = mid / ((midEnd - bassEnd) * 255)
+  out.treble = treble / ((frequency.length - midEnd) * 255)
+  return out
 }
+
+// Uniform keys for the 3-band envelope followers — module const so the
+// per-frame loop never allocates a key array.
+const BAND_UNIFORMS = ['uBass', 'uMid', 'uTreble'] as const
 
 /** 7-band split (sub → low → low-mid → mid → high-mid → high → air) for
  * contour-style presets where each band owns its own visual channel. */
@@ -44,8 +47,7 @@ function hzBandEdges(bandCount: number, binCount: number, sampleRate: number, mi
   return edges
 }
 
-function sumBands(frequency: Uint8Array, binEdges: number[], bandCount: number) {
-  const out: number[] = []
+function sumBands(frequency: Uint8Array, binEdges: number[], bandCount: number, out: number[]) {
   for (let b = 0; b < bandCount; b++) {
     const startBin = binEdges[b]
     const endBin = Math.max(startBin + 1, binEdges[b + 1])
@@ -58,19 +60,22 @@ function sumBands(frequency: Uint8Array, binEdges: number[], bandCount: number) 
       sum += frequency[i] * overlap
       weight += overlap
     }
-    out.push(weight > 0 ? sum / (weight * 255) : 0)
+    out[b] = weight > 0 ? sum / (weight * 255) : 0
   }
   return out
 }
 
-function readBands7(frequency: Uint8Array) {
+function readBands7(frequency: Uint8Array, out: number[]) {
   const edges = hzBandEdges(7, frequency.length, getSampleRate())
-  return sumBands(frequency, edges, 7)
+  return sumBands(frequency, edges, 7, out)
 }
 
 function PrismaticBloomPreset() {
   const groupRef = useRef<THREE.Group>(null!)
-  const meshRefs = useRef<THREE.Mesh[]>([])
+  const raysRef = useRef<THREE.InstancedMesh>(null!)
+  // Reused every frame — no per-ray objects, no per-frame garbage.
+  const dummy = useMemo(() => new THREE.Object3D(), [])
+  const rayColor = useMemo(() => new THREE.Color(), [])
 
   // ─────────────────────── SETTINGS ───────────────────────
   const BAR_COUNT     = 96 // rays around the circle (64 sparse · 128 dense · 192 ultra)
@@ -91,34 +96,47 @@ function PrismaticBloomPreset() {
   useFrame((state) => {
     const { intensity, sensitivity, hueShift, speed } = useStore.getState().params
     const frequency = getFreqData()
+    const rays = raysRef.current
+    if (!rays) return
 
-    meshRefs.current.forEach((bar, index) => {
-      if (!bar) return
+    for (let index = 0; index < BAR_COUNT; index++) {
       const bin = Math.min(frequency.length - 1, Math.floor((index / BAR_COUNT) * frequency.length * 0.82))
       const level = (frequency[bin] ?? 0) / 255
       const energy = Math.min(1, level * sensitivity)
 
-      // BLANK WHEN SILENT: no audio = no rays, no disc, nothing
-      if (energy < GATE) { bar.visible = false; return }
-      bar.visible = true
+      // BLANK WHEN SILENT: no audio = no rays — zero-scale hides the instance.
+      if (energy < GATE) {
+        dummy.position.set(0, 0, 0)
+        dummy.scale.set(0, 0, 0)
+        dummy.rotation.set(0, 0, 0)
+        dummy.updateMatrix()
+        rays.setMatrixAt(index, dummy.matrix)
+        continue
+      }
 
       const jitter = 1 - JITTER + JITTER * Math.abs(Math.sin(index * 12.9898))
       const len = energy * (MAX_LENGTH * intensity / 1.5) * jitter
 
       const angle = (index / BAR_COUNT) * Math.PI * 2
       const dx = Math.cos(angle), dy = Math.sin(angle)
+      const girth = 1 + energy * PUNCH
 
-      bar.scale.y = len
-      bar.scale.x = bar.scale.z = 1 + energy * PUNCH
-      bar.position.set(dx * (CENTER_OFFSET + len / 2), dy * (CENTER_OFFSET + len / 2), 0)
-      bar.rotation.z = angle - Math.PI / 2
+      dummy.scale.set(girth, len, girth)
+      dummy.position.set(dx * (CENTER_OFFSET + len / 2), dy * (CENTER_OFFSET + len / 2), 0)
+      dummy.rotation.set(0, 0, angle - Math.PI / 2)
+      dummy.updateMatrix()
+      rays.setMatrixAt(index, dummy.matrix)
 
-      ;(bar.material as THREE.MeshBasicMaterial).color.setHSL(
+      // NOTE: material color must stay white — instance colors multiply it.
+      rayColor.setHSL(
         ((hueShift + index * HUE_STEP + level * HUE_PUNCH) % 360) / 360,
         SATURATION,
         BRIGHTNESS + level * 0.35
       )
-    })
+      rays.setColorAt(index, rayColor)
+    }
+    rays.instanceMatrix.needsUpdate = true
+    if (rays.instanceColor) rays.instanceColor.needsUpdate = true
 
     if (groupRef.current) {
       groupRef.current.rotation.z = state.clock.elapsedTime * SPIN_SPEED * speed
@@ -127,12 +145,14 @@ function PrismaticBloomPreset() {
 
   return (
     <group ref={groupRef}>
-      {Array.from({ length: BAR_COUNT }, (_, index) => (
-        <mesh key={index} ref={(mesh) => { if (mesh) meshRefs.current[index] = mesh }}>
-          <cylinderGeometry args={[THICKNESS * TAPER, THICKNESS, 1, 6]} />
-          <meshBasicMaterial color="#00ff00" />
-        </mesh>
-      ))}
+      <instancedMesh
+        ref={raysRef}
+        args={[undefined, undefined, BAR_COUNT]}
+        frustumCulled={false}
+      >
+        <cylinderGeometry args={[THICKNESS * TAPER, THICKNESS, 1, 6]} />
+        <meshBasicMaterial color="#ffffff" />
+      </instancedMesh>
     </group>
   )
 }
@@ -140,6 +160,8 @@ function PrismaticBloomPreset() {
 function MellowDriftPreset() {
   const materialRef = useRef<THREE.ShaderMaterial>(null!)
   const viewport = useThree((state) => state.viewport)
+  // Reused every frame — readBands writes in place, zero per-frame garbage.
+  const bandsScratch = useMemo(() => ({ bass: 0, mid: 0, treble: 0 }), [])
   const shader = useMemo(() => ({
     uniforms: {
       uTime: { value: 0 }, uBass: { value: 0 }, uMid: { value: 0 }, uTreble: { value: 0 },
@@ -164,7 +186,7 @@ function MellowDriftPreset() {
       }
       float fbm3(vec2 p){
         float v=0., a=0.55;
-        for(int i=0;i<4;i++){ v+=a*vnoise(p); p=p*2.02+vec2(13.7,-7.1); a*=0.52; }
+        for(int i=0;i<5;i++){ v+=a*vnoise(p); p=p*2.02+vec2(13.7,-7.1); a*=0.52; }
         return v;
       }
       vec3 hsv2rgb(vec3 c){
@@ -215,7 +237,7 @@ function MellowDriftPreset() {
   }), [])
 
   useFrame((state) => {
-    const b = readBands(getFreqData())
+    const b = readBands(getFreqData(), bandsScratch)
     const { sensitivity, hueShift, intensity, speed, complexity } = useStore.getState().params
     const u = materialRef.current.uniforms
     u.uTime.value = state.clock.elapsedTime * speed
@@ -237,6 +259,14 @@ function AuroraSilkPreset() {
   const viewport = useThree((state) => state.viewport)
   // running per-band peaks for auto-gain (bass, mid, treble)
   const peaks = useRef(new Float64Array(3).fill(0.02))
+  // Scratch buffers reused every frame — the envelope follower below must
+  // not allocate (it used to build 3 throwaway arrays per frame at 60fps).
+  const bandsScratch = useMemo(() => ({ bass: 0, mid: 0, treble: 0 }), [])
+  const work = useMemo(() => ({
+    raw: new Float64Array(3),
+    norm: new Float64Array(3),
+    target: new Float64Array(3),
+  }), [])
 
   const shader = useMemo(() => ({
     uniforms: {
@@ -350,7 +380,7 @@ function AuroraSilkPreset() {
 
   useFrame((state, delta) => {
     const dt = Math.min(delta, 0.05)
-    const b = readBands(getFreqData())
+    const b = readBands(getFreqData(), bandsScratch)
     const { sensitivity, hueShift, intensity, speed, complexity } = useStore.getState().params
     const u = materialRef.current.uniforms
     u.uTime.value = state.clock.elapsedTime * speed
@@ -360,27 +390,25 @@ function AuroraSilkPreset() {
     u.uAspect.value = viewport.width / viewport.height
 
     // 1) auto-gain per band — bass no longer drowns mid/treble
-    const raw = [b.bass, b.mid, b.treble]
+    const { raw, norm, target } = work
+    raw[0] = b.bass; raw[1] = b.mid; raw[2] = b.treble
     const pk = peaks.current
     for (let i = 0; i < 3; i++) {
       pk[i] = Math.max(pk[i] - pk[i] * dt * 0.25, raw[i], 0.02)
+      norm[i] = Math.min(raw[i] / pk[i], 1)
     }
-    const norm = raw.map((v, i) => Math.min(v / pk[i], 1))
 
     // 2) sensitivity as pre-gain, clamped to 0..1
-    const target = norm.map((v) => Math.pow(Math.min(v * sensitivity, 1), 1.6))
-
     // 3) envelope follower: fast attack (~60ms), musical release (~250ms)
-    const vals = [u.uBass.value, u.uMid.value, u.uTreble.value]
     for (let i = 0; i < 3; i++) {
-      const k = target[i] > vals[i]
+      target[i] = Math.pow(Math.min(norm[i] * sensitivity, 1), 1.6)
+      const key = BAND_UNIFORMS[i]
+      const cur = u[key].value as number
+      const k = target[i] > cur
         ? 1 - Math.exp(-dt * 16)
         : 1 - Math.exp(-dt * 4)
-      vals[i] += (target[i] - vals[i]) * k
+      u[key].value = cur + (target[i] - cur) * k
     }
-    u.uBass.value = vals[0]
-    u.uMid.value = vals[1]
-    u.uTreble.value = vals[2]
   })
 
   return <mesh><planeGeometry args={[viewport.width, viewport.height]} /><shaderMaterial ref={materialRef} {...shader} /></mesh>
@@ -389,6 +417,7 @@ function AuroraSilkPreset() {
 function LiquidDriftPreset() {
   const materialRef = useRef<THREE.ShaderMaterial>(null!)
   const viewport = useThree((state) => state.viewport)
+  const bandsScratch = useMemo(() => ({ bass: 0, mid: 0, treble: 0 }), [])
   const shader = useMemo(() => ({
     uniforms: {
       uTime: { value: 0 }, uBass: { value: 0 }, uMid: { value: 0 }, uTreble: { value: 0 },
@@ -483,7 +512,7 @@ function LiquidDriftPreset() {
   }), [])
 
   useFrame((state) => {
-    const b = readBands(getFreqData())
+    const b = readBands(getFreqData(), bandsScratch)
     const { sensitivity, hueShift, intensity, speed, complexity } = useStore.getState().params
     const u = materialRef.current.uniforms
     u.uTime.value = state.clock.elapsedTime * speed
@@ -504,6 +533,7 @@ function ArcticSwirlPreset() {
   const materialRef = useRef<THREE.ShaderMaterial>(null!)
   const viewport = useThree((state) => state.viewport)
   const peaks = useRef(new Float64Array(7).fill(0.02))
+  const rawBands = useMemo(() => new Array<number>(7).fill(0), [])
 
   const shader = useMemo(() => ({
     uniforms: {
@@ -600,7 +630,7 @@ function ArcticSwirlPreset() {
 
   useFrame((state, delta) => {
     const dt = Math.min(delta, 0.05)
-    const bands = readBands7(getFreqData())
+    const bands = readBands7(getFreqData(), rawBands)
     const { sensitivity, hueShift, intensity, speed, complexity } = useStore.getState().params
     const u = materialRef.current.uniforms
     u.uTime.value = state.clock.elapsedTime * speed
@@ -637,6 +667,7 @@ function LaserSilkPreset() {
   const viewport = useThree((state) => state.viewport)
   // running per-band peak for auto-gain (adapts to any input level)
   const peaks = useRef(new Float64Array(7).fill(0.02))
+  const rawBands = useMemo(() => new Array<number>(7).fill(0), [])
 
   const shader = useMemo(() => ({
     uniforms: {
@@ -724,7 +755,7 @@ function LaserSilkPreset() {
 
   useFrame((state, delta) => {
     const dt = Math.min(delta, 0.05)
-    const bands = readBands7(getFreqData())
+    const bands = readBands7(getFreqData(), rawBands)
     const { sensitivity, hueShift, intensity, speed, complexity } = useStore.getState().params
     const u = materialRef.current.uniforms
     u.uTime.value = state.clock.elapsedTime * speed
@@ -760,6 +791,7 @@ function SonarBloomPreset() {
   const materialRef = useRef<THREE.ShaderMaterial>(null!)
   const viewport = useThree((state) => state.viewport)
   const peaks = useRef(new Float64Array(7).fill(0.05))
+  const rawBands = useMemo(() => new Array<number>(7).fill(0), [])
 
   const shader = useMemo(() => ({
     uniforms: {
@@ -865,7 +897,7 @@ function SonarBloomPreset() {
 
   useFrame((state, delta) => {
     const dt = Math.min(delta, 0.05)
-    const bands = readBands7(getFreqData())
+    const bands = readBands7(getFreqData(), rawBands)
     const { sensitivity, hueShift, intensity, speed } = useStore.getState().params
     const u = materialRef.current.uniforms
     u.uTime.value = state.clock.elapsedTime * speed
@@ -897,6 +929,12 @@ function FractalEmberPreset() {
   const materialRef = useRef<THREE.ShaderMaterial>(null!)
   const viewport = useThree((state) => state.viewport)
   const peaks = useRef(new Float64Array(3).fill(0.03))
+  const bandsScratch = useMemo(() => ({ bass: 0, mid: 0, treble: 0 }), [])
+  const work = useMemo(() => ({
+    raw: new Float64Array(3),
+    norm: new Float64Array(3),
+    target: new Float64Array(3),
+  }), [])
 
   const shader = useMemo(() => ({
     uniforms: {
@@ -989,7 +1027,7 @@ function FractalEmberPreset() {
 
   useFrame((state, delta) => {
     const dt = Math.min(delta, 0.05)
-    const b = readBands(getFreqData())
+    const b = readBands(getFreqData(), bandsScratch)
     const { sensitivity, hueShift, intensity, speed, complexity } = useStore.getState().params
     const u = materialRef.current.uniforms
     u.uTime.value = state.clock.elapsedTime * speed
@@ -1000,24 +1038,20 @@ function FractalEmberPreset() {
 
     // gentle auto-gain, but slower release than the "hype" presets —
     // this preset should never feel jittery
-    const raw = [b.bass, b.mid, b.treble]
+    const { raw, norm, target } = work
+    raw[0] = b.bass; raw[1] = b.mid; raw[2] = b.treble
     const pk = peaks.current
     for (let i = 0; i < 3; i++) {
       pk[i] = Math.max(pk[i] - pk[i] * dt * 0.15, raw[i], 0.03)
-    }
-    const norm = raw.map((v, i) => Math.min(v / pk[i], 1))
-    const target = norm.map((v) => Math.pow(Math.min(v * sensitivity, 1), 1.3))
-
-    const vals = [u.uBass.value, u.uMid.value, u.uTreble.value]
-    for (let i = 0; i < 3; i++) {
-      const k = target[i] > vals[i]
+      norm[i] = Math.min(raw[i] / pk[i], 1)
+      target[i] = Math.pow(Math.min(norm[i] * sensitivity, 1), 1.3)
+      const key = BAND_UNIFORMS[i]
+      const cur = u[key].value as number
+      const k = target[i] > cur
         ? 1 - Math.exp(-dt * 3)   // slow attack — no snap, everything eases in
         : 1 - Math.exp(-dt * 1.5) // even slower release — this loops, it doesn't pulse
-      vals[i] += (target[i] - vals[i]) * k
+      u[key].value = cur + (target[i] - cur) * k
     }
-    u.uBass.value = vals[0]
-    u.uMid.value = vals[1]
-    u.uTreble.value = vals[2]
   })
 
   return <mesh><planeGeometry args={[viewport.width, viewport.height]} /><shaderMaterial ref={materialRef} {...shader} /></mesh>
@@ -1084,6 +1118,7 @@ function CanvasAmbientPreset() {
   const materialRef = useRef<THREE.ShaderMaterial>(null!)
   const viewport = useThree((s) => s.viewport)
   const { tex, aspect } = useCanvasSource()
+  const bandsScratch = useMemo(() => ({ bass: 0, mid: 0, treble: 0 }), [])
 
   const shader = useMemo(() => ({
     uniforms: {
@@ -1095,9 +1130,9 @@ function CanvasAmbientPreset() {
       uBgDark: { value: 0.55 },       // background dim (0 = bright wash · 0.8 = near black)
       uPulse: { value: 2.0 },         // bass reactivity of bg + breathing (0 = static)
       uShadow: { value: 0.45 },       // drop shadow behind artwork (0 = off)
-      uArtDim: { value: 2.0},       // artwork brightness (0.4 dark · 0.65 normal · 1.0 full)
+      uArtDim: { value: 3.0},       // artwork brightness (0.4 dark · 0.65 normal · 1.0 full)
       uArtSaturation: { value: 0.75 },// artwork saturation (0.5 muted · 0.75 normal · 1.2 vibrant)
-      uArtContrast: { value: 1.0 },  // artwork contrast (0.8 flat · 1.0 normal · 1.3 punchy)
+      uArtContrast: { value: 0.9 },  // artwork contrast (0.8 flat · 1.0 normal · 1.3 punchy)
     },
     vertexShader: 'varying vec2 vUv; void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
     fragmentShader: `
@@ -1177,7 +1212,7 @@ function CanvasAmbientPreset() {
   }, [tex, aspect])
 
   useFrame((state) => {
-    const b = readBands(getFreqData())
+    const b = readBands(getFreqData(), bandsScratch)
     const { sensitivity, speed } = useStore.getState().params
     const u = materialRef.current.uniforms
     u.uTime.value = state.clock.elapsedTime * speed

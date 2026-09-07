@@ -198,7 +198,6 @@ export default function SpotifyPanel() {
       )}
 
       <div className="field-wrap">
-        <label className="field-label" htmlFor="spotify-playlist-select">Playlist</label>
         <div className="spotify-playlist-row">
         <PanelSelect
           id="spotify-playlist-select"

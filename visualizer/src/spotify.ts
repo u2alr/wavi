@@ -179,13 +179,28 @@ export async function exchangeCodeForToken(code: string): Promise<SpotifyTokens>
 export async function spotifyApi<T>(path: string, init?: RequestInit): Promise<T> {
   const token = await getAccessToken()
   if (!token) throw new Error('Not authenticated with Spotify')
-  const res = await fetch(`https://api.spotify.com/v1${path}`, {
-    ...init,
-    headers: { Authorization: `Bearer ${token}`, ...(init?.headers ?? {}) },
-  })
+  const send = (t: string) =>
+    fetch(`https://api.spotify.com/v1${path}`, {
+      ...init,
+      headers: { Authorization: `Bearer ${t}`, ...(init?.headers ?? {}) },
+    })
+  let res = await send(token)
   if (res.status === 401) {
-    clearTokens()
-    throw new Error('Your Spotify session expired. Reconnect and try again.')
+    // The token may have expired between the freshness check and the
+    // request — try exactly one refresh + retry before giving up the session.
+    const stored = loadTokens()
+    if (stored?.refresh_token) {
+      try {
+        const fresh = await refreshTokensDeduped(stored.refresh_token)
+        res = await send(fresh.access_token)
+      } catch {
+        // Refresh itself failed — fall through to session-expired below.
+      }
+    }
+    if (res.status === 401) {
+      clearTokens()
+      throw new Error('Your Spotify session expired. Reconnect and try again.')
+    }
   }
   if (res.status === 204) return undefined as T
   if (!res.ok) {
@@ -256,6 +271,20 @@ async function refreshTokens(refreshToken: string): Promise<SpotifyTokens> {
   return tokens
 }
 
+// Single-user app, but many callers can ask for a token in the same tick
+// (player + search + lyrics). Share one in-flight refresh so parallel
+// callers don't fire parallel refresh POSTs with last-write-wins persistence.
+let inflightRefresh: Promise<SpotifyTokens> | null = null
+
+function refreshTokensDeduped(refreshToken: string): Promise<SpotifyTokens> {
+  if (!inflightRefresh) {
+    inflightRefresh = refreshTokens(refreshToken).finally(() => {
+      inflightRefresh = null
+    })
+  }
+  return inflightRefresh
+}
+
 /** Returns a valid access token, refreshing it when needed. Null if signed out. */
 export async function getAccessToken(): Promise<string | null> {
   let tokens = loadTokens()
@@ -266,7 +295,7 @@ export async function getAccessToken(): Promise<string | null> {
     return null
   }
   try {
-    tokens = await refreshTokens(tokens.refresh_token)
+    tokens = await refreshTokensDeduped(tokens.refresh_token)
     return tokens.access_token
   } catch {
     clearTokens()

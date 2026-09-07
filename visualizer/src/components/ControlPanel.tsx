@@ -1,9 +1,8 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState } from 'react'
 import { useStore } from '../store'
 import SpotifyAuth from './SpotifyAuth'
 import SpotifyPanel from './SpotifyPanel'
 import AudioPlayerBox from './AudioPlayerBox'
-import PanelSelect from './PanelSelect'
 
 const PRESET_OPTIONS = [
   { value: 'arcticSwirl', label: 'Arctic Swirl' },
@@ -36,63 +35,25 @@ export default function ControlPanel({
   // Granular Zustand selectors to prevent unnecessary re-renders
   const currentPreset = useStore((s) => s.currentPreset)
   const params = useStore((s) => s.params)
-  const savedPresets = useStore((s) => s.savedPresets)
   const isPanelCollapsed = useStore((s) => s.isPanelCollapsed)
   const bratWhiteBg = useStore((s) => s.bratWhiteBg)
+  const bratKaraoke = useStore((s) => s.bratKaraoke)
 
-  const setCurrentPreset = useStore((s) => s.setCurrentPreset)
   const setParam = useStore((s) => s.setParam)
   const resetParams = useStore((s) => s.resetParams)
-  const savePreset = useStore((s) => s.savePreset)
-  const loadPreset = useStore((s) => s.loadPreset)
-  const deletePreset = useStore((s) => s.deletePreset)
   const togglePanelCollapsed = useStore((s) => s.togglePanelCollapsed)
   const setBratWhiteBg = useStore((s) => s.setBratWhiteBg)
-
-  const [saveName, setSaveName] = useState('')
-  const [showSave, setShowSave] = useState(false)
-  const [copiedNotification, setCopiedNotification] = useState(false)
-  const [toast, setToast] = useState<{ text: string; error?: boolean; key: number } | null>(null)
-  const toastTimer = useRef(0)
+  const setBratKaraoke = useStore((s) => s.setBratKaraoke)
 
   // Accordion state — audio open on first load, the rest expand on demand
   const [openSections, setOpenSections] = useState({
     audio: true,
     visualizer: false,
-    presets: false,
   })
 
   const toggleSection = (section: keyof typeof openSections) => {
     setOpenSections((prev) => ({ ...prev, [section]: !prev[section] }))
   }
-
-  const showToast = useCallback((text: string, error = false) => {
-    window.clearTimeout(toastTimer.current)
-    setToast({ text, error, key: Date.now() })
-    toastTimer.current = window.setTimeout(() => setToast(null), 2600)
-  }, [])
-
-  const handleShare = useCallback(async () => {
-    const data = btoa(JSON.stringify({ presetType: currentPreset, params }))
-    const url = `${window.location.origin}${window.location.pathname}#p=${data}`
-    try {
-      await navigator.clipboard.writeText(url)
-      setCopiedNotification(true)
-      showToast('Share link copied to clipboard')
-      window.setTimeout(() => setCopiedNotification(false), 2000)
-    } catch {
-      showToast('Could not copy link — clipboard blocked', true)
-    }
-  }, [currentPreset, params, showToast])
-
-  const commitSave = useCallback(() => {
-    const name = saveName.trim()
-    if (!name) return
-    savePreset(name)
-    setSaveName('')
-    setShowSave(false)
-    showToast(`Preset "${name}" saved`)
-  }, [saveName, savePreset, showToast])
 
   const onHeaderKeyDown = (section: keyof typeof openSections) => (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' || e.key === ' ') {
@@ -118,8 +79,7 @@ export default function ControlPanel({
       )}
       <div className="panel-header">
         <div className="panel-header-copy">
-          <span className="panel-header-eyebrow">Controls</span>
-          <span className="panel-header-sub">{currentPresetLabel}</span>
+          <span className="panel-header-eyebrow">Controls<span className="panel-header-sub">({currentPresetLabel})</span></span>
         </div>
         <button
           className="panel-collapse-btn"
@@ -147,8 +107,6 @@ export default function ControlPanel({
 
           <div className="ctrl-group-body">
             <div className="ctrl-group-body-inner">
-              <SpotifyAuth />
-              <AudioPlayerBox onPrev={onPrev} onNext={onNext} />
               <SpotifyPanel />
             </div>
           </div>
@@ -167,30 +125,30 @@ export default function ControlPanel({
 
           <div className="ctrl-group-body">
             <div className="ctrl-group-body-inner">
-              <div className="field-wrap">
-              <label className="field-label" htmlFor="preset-select">Active Preset</label>
-              <PanelSelect
-                id="preset-select"
-                value={currentPreset}
-                options={PRESET_OPTIONS}
-                onChange={(v) => setCurrentPreset(v)}
-                ariaLabel="Active preset"
-              />
-
-              {currentPreset === 'brat' && (
-                <label className="brat-bg-toggle" htmlFor="brat-white-bg">
-                  <span className="brat-bg-label">White background</span>
-                  <input
-                    id="brat-white-bg"
-                    type="checkbox"
-                    checked={bratWhiteBg}
-                    onChange={(e) => setBratWhiteBg(e.target.checked)}
-                  />
-                  <span className="brat-switch" aria-hidden="true" />
-                </label>
-              )}
-              </div>
-              <p className="field-hint">Changes apply live.</p>
+              {currentPreset === 'brat' ? (
+                <>
+                  <label className="brat-bg-toggle" htmlFor="brat-karaoke">
+                    <span className="brat-bg-label">Karaoke words<span className="panel-header-sub">(BETA)</span></span>
+                    <input
+                      id="brat-karaoke"
+                      type="checkbox"
+                      checked={bratKaraoke}
+                      onChange={(e) => setBratKaraoke(e.target.checked)}
+                    />
+                    <span className="brat-switch" aria-hidden="true" />
+                  </label>
+                  <label className="brat-bg-toggle" htmlFor="brat-white-bg">
+                    <span className="brat-bg-label">White background</span>
+                    <input
+                      id="brat-white-bg"
+                      type="checkbox"
+                      checked={bratWhiteBg}
+                      onChange={(e) => setBratWhiteBg(e.target.checked)}
+                    />
+                    <span className="brat-switch" aria-hidden="true" />
+                  </label>
+                </>
+              ) : null}
 
               <div className="sliders-container">
                 <div className="ctrl-row">
@@ -293,108 +251,12 @@ export default function ControlPanel({
           </div>
         </div>
 
-        {/* PRESET BOOKMARKS */}
-        <div className={`ctrl-group${openSections.presets ? ' open' : ''}`}>
-          <div className="ctrl-group-header" role="button" tabIndex={0} aria-expanded={openSections.presets} onClick={() => toggleSection('presets')} onKeyDown={onHeaderKeyDown('presets')}>
-            <div className="ctrl-group-eyebrow-row">
-              <div className="ctrl-group-title">
-                <span>Saved presets</span>
-              </div>
-              {savedPresets.length > 0 && (
-                <span className="ctrl-group-count" aria-label={`${savedPresets.length} saved presets`}>{savedPresets.length}</span>
-              )}
-            </div>
-            <span className="accordion-arrow" aria-hidden="true"><Chevron /></span>
-          </div>
-
-          <div className="ctrl-group-body">
-            <div className="ctrl-group-body-inner">
-              <div className="preset-actions">
-                <button
-                  className="xp-btn primary"
-                  onClick={() => setShowSave(!showSave)}
-                >
-                  {showSave ? 'Cancel' : '+ Save current'}
-                </button>
-                <button
-                  className="xp-btn"
-                  onClick={handleShare}
-                  title="Copy shareable preset link to clipboard"
-                >
-                  {copiedNotification ? 'Copied' : 'Share link'}
-                </button>
-              </div>
-
-              {showSave && (
-                <div className="save-preset-bar">
-                  <label htmlFor="save-preset-name" className="sr-only">
-                    Preset name
-                  </label>
-                  <input
-                    id="save-preset-name"
-                    type="text"
-                    placeholder="Name this look..."
-                    value={saveName}
-                    onChange={(e) => setSaveName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') commitSave()
-                    }}
-                    className="xp-input"
-                    autoFocus
-                  />
-                  <button
-                    className="xp-btn primary"
-                    onClick={commitSave}
-                  >
-                    Save
-                  </button>
-                </div>
-              )}
-
-              <div className="preset-list">
-                {savedPresets.map((p) => (
-                  <div key={p.id} className="preset-chip">
-                    <button
-                      type="button"
-                      className="chip-load"
-                      onClick={() => loadPreset(p.id)}
-                      title={`Load "${p.name}"`}
-                    >
-                      <span className="chip-name">{p.name}</span>
-                    </button>
-                    <button
-                      type="button"
-                      className="del"
-                      onClick={() => deletePreset(p.id)}
-                      aria-label={`Delete preset ${p.name}`}
-                      title="Delete preset"
-                    >
-                      x
-                    </button>
-                  </div>
-                ))}
-                {savedPresets.length === 0 && (
-                  <div className="preset-empty">
-                    <div className="preset-empty-icon" aria-hidden="true">
-                      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1" />
-                        <circle cx="12" cy="12" r="3.2" />
-                      </svg>
-                    </div>
-                    <div className="preset-empty-text">No custom presets yet.</div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
-      <div className="xp-toast-region" role="status" aria-live="polite">
-        {toast && (
-          <div key={toast.key} className={`xp-toast show${toast.error ? ' error' : ''}`}>
-            {toast.text}
-          </div>
-        )}
+
+      {/* Static footer — pinned below the scroll area, never scrolls. */}
+      <div className="panel-footer">
+        <AudioPlayerBox onPrev={onPrev} onNext={onNext} />
+        <SpotifyAuth />
       </div>
     </aside>
   )

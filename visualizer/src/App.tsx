@@ -1,5 +1,6 @@
 import { useRef, useEffect, useCallback, useState } from 'react'
 import Scene from './components/Scene'
+import SceneErrorBoundary from './components/SceneErrorBoundary'
 import FullscreenPill from './components/FullscreenPill'
 import ControlPanel from './components/ControlPanel'
 import AboutModal from './components/AboutModal'
@@ -27,6 +28,7 @@ import { exchangeCodeForToken, getSpotifyUser, loadTokens } from './spotify'
 import BratLyrics from './components/BratLyrics'
 import StatusBar from './components/StatusBar'
 import ExtensionBadge from './components/ExtensionBadge'
+import SavedLooksSection from './components/SavedLooksMenu'
 
 const PRESET_TYPES = [
   'arcticSwirl',
@@ -52,6 +54,7 @@ export default function App() {
   const trackName = useStore((s) => s.trackName)
   const volume = useStore((s) => s.volume)
   const currentPreset = useStore((s) => s.currentPreset)
+  const bratKaraoke = useStore((s) => s.bratKaraoke)
   const spotifyCurrentTrack = useStore((s) => s.spotifyCurrentTrack)
 
   const setPlaylist = useStore((s) => s.setPlaylist)
@@ -76,6 +79,14 @@ export default function App() {
   const [showStatusBar, setShowStatusBar] = useState(false)
   const extensionStatus = useStore((s) => s.extensionStatus)
   const setExtensionStatus = useStore((s) => s.setExtensionStatus)
+  const [menuToast, setMenuToast] = useState<{ text: string; error?: boolean; key: number } | null>(null)
+  const menuToastTimer = useRef(0)
+
+  const showMenuToast = useCallback((text: string, error = false) => {
+    window.clearTimeout(menuToastTimer.current)
+    setMenuToast({ text, error, key: Date.now() })
+    menuToastTimer.current = window.setTimeout(() => setMenuToast(null), 2600)
+  }, [])
   const [openMenu, setOpenMenu] = useState<string | null>(null)
   const [metricVisibility, setMetricVisibility] = useState({
     fps: true,
@@ -92,7 +103,13 @@ export default function App() {
     if (hash.startsWith('#p=')) {
       try {
         const data = JSON.parse(atob(hash.slice(3)))
-        if (data.presetType) setCurrentPreset(data.presetType)
+        // Legacy brat2 preset was folded into brat + karaoke toggle.
+        if (data.presetType === 'brat2') {
+          setCurrentPreset('brat')
+          useStore.getState().setBratKaraoke(true)
+        } else if (data.presetType) {
+          setCurrentPreset(data.presetType)
+        }
         if (data.params) setParams(data.params)
       } catch (e) {
         console.warn('Failed to parse URL preset data', e)
@@ -615,6 +632,10 @@ export default function App() {
                       <span>Previous Preset</span>
                       <span className="shortcut-hint">A</span>
                     </div>
+                    <SavedLooksSection
+                      onAction={() => setOpenMenu(null)}
+                      notify={showMenuToast}
+                    />
                   </div>
                 )}
               </div>
@@ -714,8 +735,13 @@ export default function App() {
       {/* MAIN VIEWPORT */}
       <div className="main-content">
         <div className="canvas-wrap">
-          <Scene />
-          <BratLyrics active={currentPreset === 'brat'} />
+          <SceneErrorBoundary>
+            <Scene />
+          </SceneErrorBoundary>
+          <BratLyrics
+            active={currentPreset === 'brat'}
+            variant={bratKaraoke ? 'karaoke' : 'line'}
+          />
 
           {/* Fullscreen pill — panel is hidden, so playback UI lives here.
               Always mounted in fullscreen: shows track transport when a track
@@ -755,6 +781,15 @@ export default function App() {
 
       {/* ABOUT & SHORTCUTS MODAL */}
       <AboutModal />
+
+      {/* Window-level toasts for menu actions (save/share). */}
+      <div className="xp-toast-region" role="status" aria-live="polite">
+        {menuToast && (
+          <div key={menuToast.key} className={`xp-toast show${menuToast.error ? ' error' : ''}`}>
+            {menuToast.text}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
