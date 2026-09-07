@@ -51,6 +51,7 @@ interface Store {
   isMiniPlayer: boolean
   activeModal: 'help' | 'shortcuts' | null
   bratWhiteBg: boolean
+  extensionStatus: '' | 'EXT LIVE' | 'EXT SILENT' | 'EXT READY' | 'EXT ERROR'
 
   setCurrentPreset: (p: string) => void
   setParam: <K extends keyof PresetParams>(key: K, value: PresetParams[K]) => void
@@ -78,6 +79,7 @@ interface Store {
   deletePreset: (id: string) => void
   setVolume: (v: number) => void
   setBratWhiteBg: (b: boolean) => void
+  setExtensionStatus: (s: '' | 'EXT LIVE' | 'EXT SILENT' | 'EXT READY' | 'EXT ERROR') => void
 }
 
 const DEFAULT_PARAMS: PresetParams = {
@@ -124,6 +126,7 @@ export const useStore = create<Store>((set, get) => ({
   savedPresets: loadSavedPresets(),
   volume: 1.0,
   bratWhiteBg: false,
+  extensionStatus: '' as '' | 'EXT LIVE' | 'EXT SILENT' | 'EXT READY' | 'EXT ERROR',
 
   setCurrentPreset: (p) => set({ currentPreset: p }),
   setParam: (key, value) => set((s) => ({ params: { ...s.params, [key]: value } })),
@@ -148,6 +151,7 @@ export const useStore = create<Store>((set, get) => ({
   setTrackName: (name) => set({ trackName: name }),
   setVolume: (v) => set({ volume: v }),
   setBratWhiteBg: (b) => set({ bratWhiteBg: b }),
+  setExtensionStatus: (s) => set({ extensionStatus: s }),
 
   savePreset: (name) => {
     const { currentPreset, params, savedPresets } = get()

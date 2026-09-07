@@ -98,7 +98,7 @@ export default function StatusBar({
         </div>
       )}
 
-      <span style={{ flex: 1 }} />
+      <span className="spacer" />
 
       <div className="status-right">
         <span className="status-preset-tag">

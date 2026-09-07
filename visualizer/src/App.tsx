@@ -1,6 +1,6 @@
 import { useRef, useEffect, useCallback, useState } from 'react'
 import Scene from './components/Scene'
-import NowPlaying from './components/NowPlaying'
+import FullscreenPill from './components/FullscreenPill'
 import ControlPanel from './components/ControlPanel'
 import AboutModal from './components/AboutModal'
 import { useStore } from './store'
@@ -28,7 +28,18 @@ import BratLyrics from './components/BratLyrics'
 import StatusBar from './components/StatusBar'
 import ExtensionBadge from './components/ExtensionBadge'
 
-const PRESET_TYPES = ['mellowDrift', 'prismaticGarden', 'auroraSilk', 'liquidDrift', 'arcticSwirl', 'laserSilk', 'sonarBloom', 'pastels', 'brat']
+const PRESET_TYPES = [
+  'arcticSwirl',
+  'auroraSilk',
+  'brat',
+  'canvasAmbient',
+  'fractalEmber',
+  'laserSilk',
+  'liquidDrift',
+  'mellowDrift',
+  'prismaticGarden',
+  'sonarBloom',
+]
 
 export default function App() {
   const fileRef = useRef<HTMLInputElement>(null)
@@ -54,6 +65,7 @@ export default function App() {
   const setSpotifyAuthed = useStore((s) => s.setSpotifyAuthed)
   const setSpotifyUser = useStore((s) => s.setSpotifyUser)
   const setSpotifyPlaying = useStore((s) => s.setSpotifyPlaying)
+  const setSpotifyCurrentTrack = useStore((s) => s.setSpotifyCurrentTrack)
   const setPlaybackProgress = useStore((s) => s.setPlaybackProgress)
   const setMetrics = useStore((s) => s.setMetrics)
   const setVolume = useStore((s) => s.setVolume)
@@ -62,7 +74,8 @@ export default function App() {
 
   const [, setShowUI] = useState(true)
   const [showStatusBar, setShowStatusBar] = useState(false)
-  const [extensionStatus, setExtensionStatus] = useState('')
+  const extensionStatus = useStore((s) => s.extensionStatus)
+  const setExtensionStatus = useStore((s) => s.setExtensionStatus)
   const [openMenu, setOpenMenu] = useState<string | null>(null)
   const [metricVisibility, setMetricVisibility] = useState({
     fps: true,
@@ -129,7 +142,7 @@ export default function App() {
   }, [setSpotifyAuthed, setSpotifyUser])
 
   // Spotify SDK State Listener — always sync from the SDK event so a
-  // naturally-ending song advances NowPlaying + lyrics even when the next
+  // naturally-ending song advances the panel player + lyrics even when the next
   // track isn't in our loaded list.
   useEffect(() => {
     setSpotifyStateListener((state) => {
@@ -191,7 +204,7 @@ export default function App() {
     }
     window.addEventListener('message', receiveExtensionAudio)
     return () => window.removeEventListener('message', receiveExtensionAudio)
-  }, [])
+  }, [setExtensionStatus])
 
   // Audio metrics sampling loop
   useEffect(() => {
@@ -219,6 +232,7 @@ export default function App() {
     (index: number) => {
       if (index < 0 || index >= playlist.length) return
       setSpotifyPlaying(false)
+      setSpotifyCurrentTrack(null)
       setCurrentTrackIndex(index)
       const file = playlist[index]
       const audio = initAudio(file)
@@ -240,7 +254,7 @@ export default function App() {
       }
       setTrackName(file.name.replace(/\.[^/.]+$/, ''))
     },
-    [playlist, setCurrentTrackIndex, setSpotifyPlaying, setTrackName]
+    [playlist, setCurrentTrackIndex, setSpotifyPlaying, setSpotifyCurrentTrack, setTrackName]
   )
 
   const handleFiles = useCallback(
@@ -248,6 +262,7 @@ export default function App() {
       const files = Array.from(e.target.files || [])
       if (files.length === 0) return
       setSpotifyPlaying(false)
+      setSpotifyCurrentTrack(null)
       setPlaylist(files)
       setCurrentTrackIndex(0)
       const audio = initAudio(files[0])
@@ -268,7 +283,7 @@ export default function App() {
       setTrackName(files[0].name.replace(/\.[^/.]+$/, ''))
       if (fileRef.current) fileRef.current.value = ''
     },
-    [setPlaylist, setCurrentTrackIndex, setSpotifyPlaying, setTrackName]
+    [setPlaylist, setCurrentTrackIndex, setSpotifyPlaying, setSpotifyCurrentTrack, setTrackName]
   )
 
   const prev = useCallback(() => {
@@ -324,7 +339,7 @@ export default function App() {
     return () => document.removeEventListener('fullscreenchange', handler)
   }, [setIsFullscreen])
 
-  // Mouse activity timer for fullscreen HUD & NowPlaying fade
+  // Mouse activity timer for fullscreen HUD fade
   useEffect(() => {
     if (!isFullscreen) return
 
@@ -702,16 +717,24 @@ export default function App() {
           <Scene />
           <BratLyrics active={currentPreset === 'brat'} />
 
-          {/* Smooth overlay NowPlaying bar */}
-          <NowPlaying
-            onPrev={spotifyCurrentTrack ? spotifyPrev : prev}
-            onNext={spotifyCurrentTrack ? spotifyNext : next}
-          />
+          {/* Fullscreen pill — panel is hidden, so playback UI lives here.
+              Always mounted in fullscreen: shows track transport when a track
+              is loaded, browser-audio dots when only the extension is live,
+              and a flowy idle state otherwise. */}
+          {isFullscreen && (
+            <FullscreenPill
+              onPrev={spotifyCurrentTrack ? spotifyPrev : prev}
+              onNext={spotifyCurrentTrack ? spotifyNext : next}
+            />
+          )}
         </div>
 
         {/* Collapsible Control Panel */}
         {!isFullscreen && !isMiniPlayer && (
-          <ControlPanel />
+          <ControlPanel
+            onPrev={spotifyCurrentTrack ? spotifyPrev : prev}
+            onNext={spotifyCurrentTrack ? spotifyNext : next}
+          />
         )}
       </div>
 

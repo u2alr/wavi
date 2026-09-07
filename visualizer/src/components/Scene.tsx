@@ -1,8 +1,12 @@
-import { useMemo, useRef } from 'react'
+import { useMemo, useRef, useEffect, useState } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useStore } from '../store'
 import { getFreqData } from '../audio'
+import { getSampleRate } from '../audio'
+
+
+const edgeCache = new Map<string, number[]>()
 
 function readBands(frequency: Uint8Array) {
   let bass = 0, mid = 0, treble = 0
@@ -20,166 +24,117 @@ function readBands(frequency: Uint8Array) {
 
 /** 7-band split (sub → low → low-mid → mid → high-mid → high → air) for
  * contour-style presets where each band owns its own visual channel. */
-function readBands7(frequency: Uint8Array) {
-  const edges = [0, 0.05, 0.1, 0.18, 0.28, 0.4, 0.55, 1]
+function hzBandEdges(bandCount: number, binCount: number, sampleRate: number, minFreq = 20, maxFreq = 20000) {
+  const key = `${bandCount}:${binCount}:${sampleRate}`
+  const cached = edgeCache.get(key)
+  if (cached) return cached
+
+  const nyquist = sampleRate / 2
+  const binHz = nyquist / binCount
+  const top = Math.min(maxFreq, nyquist)
+  const logMin = Math.log10(minFreq)
+  const logMax = Math.log10(top)
+
+  const edges: number[] = []
+  for (let i = 0; i <= bandCount; i++) {
+    const hz = Math.pow(10, logMin + (i / bandCount) * (logMax - logMin))
+    edges.push(hz / binHz)
+  }
+  edgeCache.set(key, edges)
+  return edges
+}
+
+function sumBands(frequency: Uint8Array, binEdges: number[], bandCount: number) {
   const out: number[] = []
-  for (let b = 0; b < 7; b++) {
-    const start = Math.floor(frequency.length * edges[b])
-    const end = Math.max(start + 1, Math.floor(frequency.length * edges[b + 1]))
-    let sum = 0
-    for (let i = start; i < end; i++) sum += frequency[i]
-    out.push(sum / ((end - start) * 255))
+  for (let b = 0; b < bandCount; b++) {
+    const startBin = binEdges[b]
+    const endBin = Math.max(startBin + 1, binEdges[b + 1])
+    let sum = 0, weight = 0
+    const i0 = Math.floor(startBin)
+    const i1 = Math.min(frequency.length - 1, Math.ceil(endBin) - 1)
+    for (let i = i0; i <= i1; i++) {
+      const overlap = Math.min(i + 1, endBin) - Math.max(i, startBin)
+      if (overlap <= 0) continue
+      sum += frequency[i] * overlap
+      weight += overlap
+    }
+    out.push(weight > 0 ? sum / (weight * 255) : 0)
   }
   return out
 }
 
+function readBands7(frequency: Uint8Array) {
+  const edges = hzBandEdges(7, frequency.length, getSampleRate())
+  return sumBands(frequency, edges, 7)
+}
+
 function PrismaticBloomPreset() {
-  const materialRef = useRef<THREE.ShaderMaterial>(null!)
-  const viewport = useThree((state) => state.viewport)
-  const peaks = useRef(new Float64Array(7).fill(0.05))
+  const groupRef = useRef<THREE.Group>(null!)
+  const meshRefs = useRef<THREE.Mesh[]>([])
 
-  const shader = useMemo(() => ({
-    uniforms: {
-      uTime: { value: 0 }, uBands: { value: [0, 0, 0, 0, 0, 0, 0] },
-      uSensitivity: { value: 1 }, uHueShift: { value: 200 }, uIntensity: { value: 1.5 }, uAspect: { value: 1 },
-      uZoom: { value: 1.5 },
-      uPetalWidth: { value: 1.0 },
-      uGap: { value: 0.1 },
-      uBloom: { value: 4.0 },
-      uGlow: { value: 2.0 },
-    },
-    vertexShader: 'varying vec2 vUv; void main(){vUv=uv;gl_Position=projectionMatrix * modelViewMatrix * vec4(position,1.0);}',
-    fragmentShader: `
-      varying vec2 vUv;
-      uniform float uTime,uBands[7],uSensitivity,uHueShift,uIntensity,uAspect,uZoom,uPetalWidth,uGap,uBloom,uGlow;
+  // ─────────────────────── SETTINGS ───────────────────────
+  const BAR_COUNT     = 96 // rays around the circle (64 sparse · 128 dense · 192 ultra)
+  const MAX_LENGTH    = 4.5  // ray reach at full volume (1.5 short · 2.9 to edge · 3.5 past)
+  const THICKNESS     = 0.004// ray base width (0.008 needle · 0.03 chunky)
+  const TAPER         = 1.0 // tip width vs base (0 = sharp needle · 1 = no taper)
+  const CENTER_OFFSET = 0    // start radius (0 = from center · 0.3 = donut hole)
+  const GATE          = 0.02 // min level to exist — below this = BLANK screen
+  const JITTER        = 0.1  // per-ray length randomness (0 perfect circle · 0.5 organic)
+  const SPIN_SPEED    = 0.05 // rotation (0 static · 0.2 fast · negative = reverse)
+  const HUE_STEP      = 8    // hue° per ray (0 single color · 3 rainbow around circle)
+  const HUE_PUNCH     = 35   // hue kick on hits (0 stable · 60 colors swirl on beat)
+  const SATURATION    = 0.9  // 0 = grayscale · 1 = neon
+  const BRIGHTNESS    = 0.1 // base lightness (0.2 moody · 0.5 bright)
+  const PUNCH         = 2  // thickness growth on hits (0 constant · 2 fat on beat)
+  // ────────────────────────────────────────────────────────
 
-      vec3 hsv(vec3 c){vec4 k=vec4(1.,.666666,.333333,3.);vec3 p=abs(fract(c.xxx+k.xyz)*6.-k.www);return c.z*mix(k.xxx,clamp(p-k.xxx,0.,1.),c.y);}
-      float hash(vec2 p){vec3 p3=fract(vec3(p.xyx)*.1031);p3+=dot(p3,p3.yzx+33.33);return fract((p3.x+p3.y)*p3.z);}
-      float vnoise(vec2 p){vec2 i=floor(p),f=fract(p);vec2 u=f*f*(3.-2.*f);
-        return mix(mix(hash(i),hash(i+vec2(1.,0.)),u.x),mix(hash(i+vec2(0.,1.)),hash(i+vec2(1.,1.)),u.x),u.y);}
-      float fbm(vec2 p){float v=0.,a=.5;for(int i=0;i<3;i++){v+=a*vnoise(p);p=p*2.03+vec2(9.2,-5.4);a*=.5;}return v;}
+  useFrame((state) => {
+    const { intensity, sensitivity, hueShift, speed } = useStore.getState().params
+    const frequency = getFreqData()
 
-      void main(){
-        vec2 p=(vUv-.5)*2.; p.x*=uAspect;
-        p /= uZoom;
+    meshRefs.current.forEach((bar, index) => {
+      if (!bar) return
+      const bin = Math.min(frequency.length - 1, Math.floor((index / BAR_COUNT) * frequency.length * 0.82))
+      const level = (frequency[bin] ?? 0) / 255
+      const energy = Math.min(1, level * sensitivity)
 
-        float e[7];
-        float strongest=0.0;
-        for(int i=0;i<7;i++){
-          e[i]=pow(clamp(uBands[i],0.0,1.0),1.6);
-          strongest=max(strongest,e[i]);
-        }
-        float bass=(e[0]+e[1])*0.5;
-        float mid =(e[2]+e[3]+e[4])/3.0;
-        float high=(e[5]+e[6])*0.5;
+      // BLANK WHEN SILENT: no audio = no rays, no disc, nothing
+      if (energy < GATE) { bar.visible = false; return }
+      bar.visible = true
 
-        float audio=smoothstep(0.01,0.30,strongest);
+      const jitter = 1 - JITTER + JITTER * Math.abs(Math.sin(index * 12.9898))
+      const len = energy * (MAX_LENGTH * intensity / 1.5) * jitter
 
-        float r=length(p);
-        float a=atan(p.y,p.x);
-        float t=uTime;
+      const angle = (index / BAR_COUNT) * Math.PI * 2
+      const dx = Math.cos(angle), dy = Math.sin(angle)
 
-        float spin=t*0.6+mid*0.10;
-        float bloom=(0.8+bass*0.30)*uBloom;
-        float flash=1.0+high*0.6;
+      bar.scale.y = len
+      bar.scale.x = bar.scale.z = 1 + energy * PUNCH
+      bar.position.set(dx * (CENTER_OFFSET + len / 2), dy * (CENTER_OFFSET + len / 2), 0)
+      bar.rotation.z = angle - Math.PI / 2
 
-        float hs=uHueShift/360.0;
-        float hues[7];
-        hues[0]=0.97; hues[1]=0.05; hues[2]=0.13; hues[3]=0.30;
-        hues[4]=0.45; hues[5]=0.60; hues[6]=0.78;
+      ;(bar.material as THREE.MeshBasicMaterial).color.setHSL(
+        ((hueShift + index * HUE_STEP + level * HUE_PUNCH) % 360) / 360,
+        SATURATION,
+        BRIGHTNESS + level * 0.35
+      )
+    })
 
-        vec3 col=vec3(0.012,0.014,0.030);
-        col+=hsv(vec3(fract(hs+0.5),0.5,1.0))*fbm(p*3.0+t*0.1)*0.02*audio;
-
-        // === OUTER PETAL FAMILY ===
-        {
-          float k=140.0;
-          float phase=a*k+spin;
-          float m=mod(floor(phase/6.28318),7.0);
-          int bi=int(m);
-          float eb=e[bi];
-
-          float petal=pow(0.5+0.5*cos(phase), 1.6 / uPetalWidth);
-          float sep=smoothstep(uGap, uGap+0.20, petal);
-          float R=(0.30+0.95*petal)*bloom*(0.90+eb*0.20);
-          float d=r-R;
-          float body=(1.0-smoothstep(-0.05,0.08, d / uPetalWidth))*sep;
-          float rib=pow(sin(d*34.0-t*2.0)*0.5+0.5,1.6);
-
-          float gate=smoothstep(0.03,0.55,eb)*audio;
-          float glow=body*rib*gate*flash;
-
-          vec3 pc=hsv(vec3(fract(hues[bi]+hs),0.90,1.0));
-          col+=pc*glow*uIntensity;
-          col+=vec3(1.0)*glow*eb*eb*0.25;
-
-          float halo=(1.0-smoothstep(-0.12,0.35,d/uPetalWidth))*sep;
-          col+=pc*halo*halo*gate*0.45*uGlow;
-        }
-
-        // === INNER PETAL FAMILY ===
-        {
-          float k=70.0;
-          float phase=a*k-spin*1.35+3.14159;
-          float m=mod(floor(phase/6.28318),7.0);
-          int bi=int(m);
-          float eb=e[bi];
-
-          float petal=pow(0.5+0.5*cos(phase), 1.8 / uPetalWidth);
-          float sep=smoothstep(uGap, uGap+0.20, petal);
-          float R=(0.18+0.55*petal)*bloom*(0.85+high*0.15);
-          float d=r-R;
-          float body=(1.0-smoothstep(-0.04,0.06, d / uPetalWidth))*sep;
-          float rib=pow(sin(d*42.0+t*2.4)*0.5+0.5,1.6);
-
-          float gate=smoothstep(0.05,0.60,eb)*audio;
-          float glow=body*rib*gate*0.6;
-
-          vec3 pc=hsv(vec3(fract(hues[bi]+hs),0.90,1.0));
-          col+=pc*glow*uIntensity;
-
-          float halo=(1.0-smoothstep(-0.10,0.30,d/uPetalWidth))*sep;
-          col+=pc*halo*halo*gate*0.35*uGlow;
-        }
-
-        // === CORE HEART (REMOVED) ===
-        // The center glow is gone. The middle is now dark/empty.
-
-        col*=1.0-smoothstep(1.1,2.0,r)*0.7;
-        col=col/(1.0+col*0.7);
-
-        gl_FragColor=vec4(col,1.0);
-      }
-    `,
-  }), [])
-
-  useFrame((state, delta) => {
-    const dt = Math.min(delta, 0.05)
-    const bands = readBands7(getFreqData())
-    const { sensitivity, hueShift, intensity, speed } = useStore.getState().params
-    const u = materialRef.current.uniforms
-    u.uTime.value = state.clock.elapsedTime * speed
-    u.uSensitivity.value = sensitivity
-    u.uHueShift.value = hueShift
-    u.uIntensity.value = intensity
-    u.uAspect.value = viewport.width / viewport.height
-
-    const arr = u.uBands.value as number[]
-    const pk = peaks.current
-    const HEADROOM = 1.6
-
-    for (let i = 0; i < 7; i++) {
-      pk[i] = Math.max(pk[i] - pk[i] * dt * 0.15, bands[i], 0.05)
-      const norm = Math.min(bands[i] / (pk[i] * HEADROOM), 1)
-      const target = Math.pow(norm, 1.5)
-      const k = target > arr[i]
-        ? 1 - Math.exp(-dt * 12)
-        : 1 - Math.exp(-dt * 4)
-      arr[i] += (target - arr[i]) * k
+    if (groupRef.current) {
+      groupRef.current.rotation.z = state.clock.elapsedTime * SPIN_SPEED * speed
     }
   })
 
-  return <mesh><planeGeometry args={[viewport.width, viewport.height]} /><shaderMaterial ref={materialRef} {...shader} /></mesh>
+  return (
+    <group ref={groupRef}>
+      {Array.from({ length: BAR_COUNT }, (_, index) => (
+        <mesh key={index} ref={(mesh) => { if (mesh) meshRefs.current[index] = mesh }}>
+          <cylinderGeometry args={[THICKNESS * TAPER, THICKNESS, 1, 6]} />
+          <meshBasicMaterial color="#00ff00" />
+        </mesh>
+      ))}
+    </group>
+  )
 }
 
 function MellowDriftPreset() {
@@ -810,10 +765,10 @@ function SonarBloomPreset() {
     uniforms: {
       uTime: { value: 0 }, uBands: { value: [0, 0, 0, 0, 0, 0, 0] },
       uSensitivity: { value: 1 }, uHueShift: { value: 200 }, uIntensity: { value: 1.5 }, uAspect: { value: 1 },
-      uLineCount: { value: 82.0 },
-      uPushStrength: { value: 0.2 },
-      uWaveSpeed: { value: 1.5 },      
-      uTaper: { value: 0.8},          
+      uLineCount: { value: 60.0 },
+      uPushStrength: { value: 0.8 },
+      uWaveSpeed: { value: 1.8 },      
+      uTaper: { value: 0.1 },          
       uCoreSize: { value: 16.0 },       
       uRotationSpeed: { value: 0.2 },  
       uZoom: { value: 2.0 },           // <--- ZOOM IS BACK! (1.0 = normal, 2.0 = zoomed in 2x)
@@ -937,26 +892,327 @@ function SonarBloomPreset() {
   return <mesh><planeGeometry args={[viewport.width, viewport.height]} /><shaderMaterial ref={materialRef} {...shader} /></mesh>
 }
 
+
+function FractalEmberPreset() {
+  const materialRef = useRef<THREE.ShaderMaterial>(null!)
+  const viewport = useThree((state) => state.viewport)
+  const peaks = useRef(new Float64Array(3).fill(0.03))
+
+  const shader = useMemo(() => ({
+    uniforms: {
+      uTime: { value: 0 }, uBass: { value: 0 }, uMid: { value: 0 }, uTreble: { value: 0 },
+      uHueShift: { value: 200 }, uIntensity: { value: 1.5 }, uComplexity: { value: 1 }, uAspect: { value: 1 },
+    },
+    vertexShader: 'varying vec2 vUv; void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
+    fragmentShader: `
+      varying vec2 vUv;
+      uniform float uTime,uBass,uMid,uTreble,uHueShift,uIntensity,uComplexity,uAspect;
+
+      float hash(vec2 p){
+        vec3 p3=fract(vec3(p.xyx)*0.1031);
+        p3+=dot(p3,p3.yzx+33.33);
+        return fract((p3.x+p3.y)*p3.z);
+      }
+      float vnoise(vec2 p){
+        vec2 i=floor(p), f=fract(p);
+        vec2 u=f*f*(3.0-2.0*f);
+        return mix(mix(hash(i),hash(i+vec2(1.,0.)),u.x),
+                   mix(hash(i+vec2(0.,1.)),hash(i+vec2(1.,1.)),u.x),u.y);
+      }
+      float fbm(vec2 p){
+        float v=0., a=0.55;
+        for(int i=0;i<5;i++){ v+=a*vnoise(p); p=p*2.03+vec2(7.3,-4.1); a*=0.55; }
+        return v;
+      }
+      vec3 hsv2rgb(vec3 c){
+        vec4 K=vec4(1.0,2.0/3.0,1.0/3.0,3.0);
+        vec3 p=abs(fract(c.xxx+K.xyz)*6.0-K.www);
+        return c.z*mix(K.xxx,clamp(p-K.xxx,0.0,1.0),c.y);
+      }
+      // cheap film grain
+      float grain(vec2 p, float t){
+        return hash(p*vec2(1000.0,1000.0)+t*37.0);
+      }
+
+      void main(){
+        // BASS: slow "breathing" zoom — the cover feels like it's inhaling
+        float zoom = 1.0 + uBass * 0.06;
+        vec2 p=(vUv-0.5)*2.0*zoom; p.x*=uAspect;
+
+        // very slow base drift — this is a LOOP, not a reactive spike-fest
+        float t=uTime*0.035;
+        float detail=1.4+uComplexity*0.5;
+
+        // painterly domain-warp, mid energy adds gentle turbulence (not violent)
+        vec2 q=vec2(fbm(p*detail+vec2(0.0,t*0.6)+uMid*0.10),
+                    fbm(p*detail+vec2(t*0.5,0.0)-uMid*0.08));
+        vec2 r=vec2(fbm(p*detail*0.8+q*1.4+vec2(t*0.3,-t*0.2)),
+                    fbm(p*detail*0.8+q*1.4-vec2(t*0.2,t*0.25)));
+        float f=fbm(p*detail+r*1.3+t*0.1);
+
+        // muted, cover-art palette (dusk / vinyl tones), hue-shiftable
+        float hs=uHueShift/360.0;
+        vec3 shadow = hsv2rgb(vec3(fract(hs+0.60),0.55,0.10));
+        vec3 mid1   = hsv2rgb(vec3(fract(hs+0.02),0.65,0.35));
+        vec3 mid2   = hsv2rgb(vec3(fract(hs+0.10),0.55,0.55));
+        vec3 highlt = hsv2rgb(vec3(fract(hs+0.15),0.35,0.85));
+
+        vec3 col = mix(shadow, mid1, smoothstep(0.25,0.55,f));
+        col = mix(col, mid2, smoothstep(0.50,0.75,f + uMid*0.12));
+        col = mix(col, highlt, smoothstep(0.68,0.92,f)*(0.5+0.5*r.x));
+
+        // soft vignette like a printed sleeve
+        float vig = 1.0 - smoothstep(0.7,1.5,dot(p,p))*0.6;
+        col *= vig;
+
+        // TREBLE: rare, soft light glints drifting across the surface — not sparkle-spam
+        float glintField = fbm(p*3.5 - t*2.0 + 11.0);
+        float glint = smoothstep(0.80,0.94,glintField) * pow(uTreble,1.6);
+        col += highlt * glint * 0.8;
+
+        // BASS: gentle overall glow pulse, slow attack feel
+        col *= 1.0 + uBass*0.15;
+
+        // film grain + subtle chromatic fringing for that "physical print" feel
+        float g = (grain(vUv, uTime) - 0.5) * 0.035;
+        col += g;
+        col.r += 0.004*sin(t*3.0);
+        col.b -= 0.004*sin(t*3.0);
+
+        col *= uIntensity * 0.95;
+        col = col / (1.0 + col*0.5);
+
+        gl_FragColor = vec4(col,1.0);
+      }
+    `,
+  }), [])
+
+  useFrame((state, delta) => {
+    const dt = Math.min(delta, 0.05)
+    const b = readBands(getFreqData())
+    const { sensitivity, hueShift, intensity, speed, complexity } = useStore.getState().params
+    const u = materialRef.current.uniforms
+    u.uTime.value = state.clock.elapsedTime * speed
+    u.uHueShift.value = hueShift
+    u.uIntensity.value = intensity
+    u.uComplexity.value = complexity
+    u.uAspect.value = viewport.width / viewport.height
+
+    // gentle auto-gain, but slower release than the "hype" presets —
+    // this preset should never feel jittery
+    const raw = [b.bass, b.mid, b.treble]
+    const pk = peaks.current
+    for (let i = 0; i < 3; i++) {
+      pk[i] = Math.max(pk[i] - pk[i] * dt * 0.15, raw[i], 0.03)
+    }
+    const norm = raw.map((v, i) => Math.min(v / pk[i], 1))
+    const target = norm.map((v) => Math.pow(Math.min(v * sensitivity, 1), 1.3))
+
+    const vals = [u.uBass.value, u.uMid.value, u.uTreble.value]
+    for (let i = 0; i < 3; i++) {
+      const k = target[i] > vals[i]
+        ? 1 - Math.exp(-dt * 3)   // slow attack — no snap, everything eases in
+        : 1 - Math.exp(-dt * 1.5) // even slower release — this loops, it doesn't pulse
+      vals[i] += (target[i] - vals[i]) * k
+    }
+    u.uBass.value = vals[0]
+    u.uMid.value = vals[1]
+    u.uTreble.value = vals[2]
+  })
+
+  return <mesh><planeGeometry args={[viewport.width, viewport.height]} /><shaderMaterial ref={materialRef} {...shader} /></mesh>
+}
+
+function useCanvasSource() {
+  const spotifyCurrentTrack = useStore((s) => s.spotifyCurrentTrack)
+  const [source, setSource] = useState<{ tex: THREE.Texture | null; aspect: number }>({ tex: null, aspect: 1 })
+
+  useEffect(() => {
+    let dead = false
+    let dispose: (() => void) | null = null
+
+    const makeVideo = (url: string, aspect: number) => {
+      const video = document.createElement('video')
+      video.src = url
+      video.crossOrigin = 'anonymous'
+      video.loop = true
+      video.muted = true
+      video.playsInline = true
+      video.play().catch(() => {})
+      const tex = new THREE.VideoTexture(video)
+      tex.colorSpace = THREE.SRGBColorSpace
+      if (!dead) {
+        setSource({ tex, aspect })
+        dispose = () => { video.pause(); video.removeAttribute('src'); tex.dispose() }
+      }
+    }
+
+    const makeImage = (url: string) => {
+      new THREE.TextureLoader().load(url, (tex) => {
+        tex.colorSpace = THREE.SRGBColorSpace
+        if (!dead) { setSource({ tex, aspect: 1 }); dispose = () => tex.dispose() }
+      })
+    }
+
+    ;(async () => {
+      const track = spotifyCurrentTrack
+      if (!track) return
+
+      try {
+        // 🪄 Just fetch your own local path! The proxy handles the rest.
+        const res = await fetch(`/api/canvas?trackId=${encodeURIComponent(track.id)}`)
+        if (!res.ok) throw new Error('proxy error')
+        
+        const data = await res.json()
+        const canvasUrl = data?.canvasesList?.[0]?.canvasUrl
+        if (!canvasUrl) throw new Error('no canvas for this track')
+        
+        makeVideo(canvasUrl, 9 / 16)
+      } catch {
+        // Fallback to album art if no canvas exists
+        const art = track.album?.images?.[0]?.url
+        if (art) makeImage(art)
+      }
+    })()
+
+    return () => { dead = true; dispose?.() }
+  }, [spotifyCurrentTrack?.id])
+
+  return source
+}
+function CanvasAmbientPreset() {
+  const materialRef = useRef<THREE.ShaderMaterial>(null!)
+  const viewport = useThree((s) => s.viewport)
+  const { tex, aspect } = useCanvasSource()
+
+  const shader = useMemo(() => ({
+    uniforms: {
+      uTime: { value: 0 }, uBass: { value: 0 }, uAspect: { value: 1 },
+      uTex: { value: null as THREE.Texture | null }, uHasTex: { value: 0 },
+      uArtAspect: { value: 1 },
+      uArtSize: { value: 0.60 },      // half-height of the artwork (0.5 small · 0.9 huge)
+      uRadius: { value: 0.04 },       // corner roundness (0 square · 0.12 very round)
+      uBgDark: { value: 0.55 },       // background dim (0 = bright wash · 0.8 = near black)
+      uPulse: { value: 2.0 },         // bass reactivity of bg + breathing (0 = static)
+      uShadow: { value: 0.45 },       // drop shadow behind artwork (0 = off)
+      uArtDim: { value: 2.0},       // artwork brightness (0.4 dark · 0.65 normal · 1.0 full)
+      uArtSaturation: { value: 0.75 },// artwork saturation (0.5 muted · 0.75 normal · 1.2 vibrant)
+      uArtContrast: { value: 1.0 },  // artwork contrast (0.8 flat · 1.0 normal · 1.3 punchy)
+    },
+    vertexShader: 'varying vec2 vUv; void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
+    fragmentShader: `
+      varying vec2 vUv;
+      uniform float uTime,uBass,uAspect,uHasTex,uArtAspect,uArtSize,uRadius,uBgDark,uPulse,uShadow;
+      uniform float uArtDim,uArtSaturation,uArtContrast;
+      uniform sampler2D uTex;
+
+      float rbox(vec2 p, vec2 b, float r){
+        vec2 q=abs(p)-b+r;
+        return length(max(q,0.0))+min(max(q.x,q.y),0.0)-r;
+      }
+
+      // Desaturate/saturate helper
+      vec3 adjustSaturation(vec3 col, float sat) {
+        float gray = dot(col, vec3(0.299, 0.587, 0.114));
+        return mix(vec3(gray), col, sat);
+      }
+
+      void main(){
+        vec2 p=(vUv-0.5)*2.0; p.x*=uAspect;
+
+        // artwork rect, breathing slightly with the bass
+        float H=uArtSize;
+        float W=H*uArtAspect;
+        vec2 q=p/(1.0+uBass*0.02*uPulse);
+
+        float d=rbox(q, vec2(W,H), uRadius);
+        float mask=(1.0-smoothstep(-0.008,0.008,d))*uHasTex;
+        vec2 uvArt=clamp(q/(2.0*vec2(W,H))+0.5, 0.0, 1.0);
+
+        vec3 art=uHasTex>0.5 ? texture2D(uTex,uvArt).rgb : vec3(0.0);
+        
+        // TONE DOWN THE ARTWORK
+        art *= uArtDim;                          // dim overall
+        art = adjustSaturation(art, uArtSaturation); // reduce saturation
+        art = (art - 0.5) * uArtContrast + 0.5;  // boost contrast slightly
+        
+        // subtle vignette on the artwork itself
+        float artVig = 0.8 - smoothstep(0.6, 1.0, length(uvArt - 0.5) * 1.8);
+        art *= mix(0.7, 1.0, artVig);
+
+        // ambient background = averaged artwork color (like your ref)
+        vec3 avg;
+        if(uHasTex>0.5){
+          avg =texture2D(uTex,vec2(0.5,0.5)).rgb;
+          avg+=texture2D(uTex,vec2(0.25,0.5)).rgb;
+          avg+=texture2D(uTex,vec2(0.75,0.5)).rgb;
+          avg+=texture2D(uTex,vec2(0.5,0.25)).rgb;
+          avg+=texture2D(uTex,vec2(0.5,0.75)).rgb;
+          avg/=5.0;
+        } else {
+          avg=vec3(0.16,0.10,0.04); // warm fallback (your screenshot's brown)
+        }
+
+        float vig=1.0-smoothstep(0.4,2.4,length(p))*0.55;
+        vec3 bg=avg*(1.0-uBgDark)*vig;
+        bg*=0.85+uBass*0.35*uPulse;
+
+        // soft drop shadow hugging the rounded rect
+        float shadow=exp(-max(d,0.0)*6.0)*uShadow;
+
+        vec3 col=bg*(1.0-shadow);
+        col=mix(col,art,mask);
+
+        col=col/(1.0+col*0.6);
+        gl_FragColor=vec4(col,1.0);
+      }
+    `,
+  }), [])
+
+  useEffect(() => {
+    const u = materialRef.current.uniforms
+    u.uTex.value = tex
+    u.uHasTex.value = tex ? 1 : 0
+    u.uArtAspect.value = aspect
+  }, [tex, aspect])
+
+  useFrame((state) => {
+    const b = readBands(getFreqData())
+    const { sensitivity, speed } = useStore.getState().params
+    const u = materialRef.current.uniforms
+    u.uTime.value = state.clock.elapsedTime * speed
+    u.uBass.value = Math.min(b.bass * sensitivity, 1.5)
+    u.uAspect.value = viewport.width / viewport.height
+  })
+
+  return <mesh><planeGeometry args={[viewport.width, viewport.height]} /><shaderMaterial ref={materialRef} {...shader} /></mesh>
+}
 function ActivePreset() {
   const currentPreset = useStore((state) => state.currentPreset)
 
   switch (currentPreset) {
-    case 'prismaticGarden':
-      return <PrismaticBloomPreset />
-    case 'auroraSilk':
-      return <AuroraSilkPreset />
-    case 'liquidDrift':
-      return <LiquidDriftPreset />
     case 'arcticSwirl':
       return <ArcticSwirlPreset />
-    case 'laserSilk':
-      return <LaserSilkPreset />
-    case 'sonarBloom':
-      return <SonarBloomPreset />
+    case 'auroraSilk':
+      return <AuroraSilkPreset />
     case 'brat':
       return null
-    default:
+    case 'canvasAmbient':
+      return <CanvasAmbientPreset />
+    case 'fractalEmber':
+      return <FractalEmberPreset />
+    case 'laserSilk':
+      return <LaserSilkPreset />
+    case 'liquidDrift':
+      return <LiquidDriftPreset />
+    case 'mellowDrift':
       return <MellowDriftPreset />
+    case 'prismaticGarden':
+      return <PrismaticBloomPreset />
+    case 'sonarBloom':
+      return <SonarBloomPreset />
+    default:
+      return <CanvasAmbientPreset />
   }
 }
 

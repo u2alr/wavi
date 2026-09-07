@@ -2,8 +2,37 @@ import { useState, useCallback, useRef } from 'react'
 import { useStore } from '../store'
 import SpotifyAuth from './SpotifyAuth'
 import SpotifyPanel from './SpotifyPanel'
+import AudioPlayerBox from './AudioPlayerBox'
+import PanelSelect from './PanelSelect'
 
-export default function ControlPanel() {
+const PRESET_OPTIONS = [
+  { value: 'arcticSwirl', label: 'Arctic Swirl' },
+  { value: 'auroraSilk', label: 'Aurora Silk' },
+  { value: 'brat', label: 'brat' },
+  { value: 'canvasAmbient', label: 'Canvas Ambient' },
+  { value: 'fractalEmber', label: 'Fractal Ember' },
+  { value: 'laserSilk', label: 'Laser Silk' },
+  { value: 'liquidDrift', label: 'Liquid Drift' },
+  { value: 'mellowDrift', label: 'Mellow Drift' },
+  { value: 'prismaticGarden', label: 'Prismatic Garden' },
+  { value: 'sonarBloom', label: 'Sonar Bloom' },
+]
+
+function Chevron() {
+  return (
+    <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M6 4l4 4-4 4" />
+    </svg>
+  )
+}
+
+export default function ControlPanel({
+  onPrev,
+  onNext,
+}: {
+  onPrev: () => void
+  onNext: () => void
+}) {
   // Granular Zustand selectors to prevent unnecessary re-renders
   const currentPreset = useStore((s) => s.currentPreset)
   const params = useStore((s) => s.params)
@@ -26,11 +55,11 @@ export default function ControlPanel() {
   const [toast, setToast] = useState<{ text: string; error?: boolean; key: number } | null>(null)
   const toastTimer = useRef(0)
 
-  // Accordion state
+  // Accordion state — audio open on first load, the rest expand on demand
   const [openSections, setOpenSections] = useState({
     audio: true,
-    visualizer: true,
-    presets: true,
+    visualizer: false,
+    presets: false,
   })
 
   const toggleSection = (section: keyof typeof openSections) => {
@@ -72,77 +101,81 @@ export default function ControlPanel() {
     }
   }
 
+  const pct = (v: number, min: number, max: number) =>
+    `${Math.max(0, Math.min(100, ((v - min) / (max - min)) * 100))}%`
+
+  const currentPresetLabel =
+    PRESET_OPTIONS.find((option) => option.value === currentPreset)?.label ?? currentPreset
+
   return (
     <aside className={`control-panel ${isPanelCollapsed ? 'collapsed' : ''}`} aria-label="Visualizer Controls">
-      {/* Sidebar Collapse / Expand Handle */}
-      <button
-        className="panel-toggle-tab"
-        onClick={togglePanelCollapsed}
-        title={isPanelCollapsed ? 'Expand Controls (Tab)' : 'Collapse Controls (Tab)'}
-        aria-label="Toggle Control Panel"
-      >
-        <span className="toggle-tab-icon">{isPanelCollapsed ? '◀' : '▶'}</span>
-      </button>
+      {isPanelCollapsed && (
+        <button className="panel-reopen" onClick={togglePanelCollapsed} title="Expand Controls (Tab)" aria-label="Expand Control Panel">
+          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M10 4L6 8l4 4" />
+          </svg>
+        </button>
+      )}
+      <div className="panel-header">
+        <div className="panel-header-copy">
+          <span className="panel-header-eyebrow">Controls</span>
+          <span className="panel-header-sub">{currentPresetLabel}</span>
+        </div>
+        <button
+          className="panel-collapse-btn"
+          onClick={togglePanelCollapsed}
+          title="Collapse Controls (Tab)"
+          aria-label="Collapse Control Panel"
+        >
+          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M6 4l4 4-4 4" />
+          </svg>
+        </button>
+      </div>
 
       <div className="control-panel-scroll">
         {/* AUDIO SOURCE SECTION */}
-        <div className="ctrl-group">
+        <div className={`ctrl-group audio-source-group${openSections.audio ? ' open' : ''}`}>
           <div className="ctrl-group-header" role="button" tabIndex={0} aria-expanded={openSections.audio} onClick={() => toggleSection('audio')} onKeyDown={onHeaderKeyDown('audio')}>
-            <div className="ctrl-group-title">
-              <span>AUDIO SOURCE</span>
+            <div className="ctrl-group-eyebrow-row">
+              <div className="ctrl-group-title">
+                <span>Audio source</span>
+              </div>
             </div>
-            <span className="accordion-arrow">{openSections.audio ? '▾' : '▸'}</span>
+            <span className="accordion-arrow" aria-hidden="true"><Chevron /></span>
           </div>
 
-          {openSections.audio && (
-            <div className="ctrl-group-body">
+          <div className="ctrl-group-body">
+            <div className="ctrl-group-body-inner">
               <SpotifyAuth />
+              <AudioPlayerBox onPrev={onPrev} onNext={onNext} />
               <SpotifyPanel />
             </div>
-          )}
+          </div>
         </div>
 
         {/* VISUALIZER PRESETS & SHADER PARAMS */}
-        <div className="ctrl-group">
+        <div className={`ctrl-group${openSections.visualizer ? ' open' : ''}`}>
           <div className="ctrl-group-header" role="button" tabIndex={0} aria-expanded={openSections.visualizer} onClick={() => toggleSection('visualizer')} onKeyDown={onHeaderKeyDown('visualizer')}>
-            <div className="ctrl-group-title">
-              <span>VISUALIZER ENGINE</span>
+            <div className="ctrl-group-eyebrow-row">
+              <div className="ctrl-group-title">
+                <span>Visualizer engine</span>
+              </div>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <button
-                className="btn-tiny"
-                title="Reset sliders to defaults"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  resetParams()
-                }}
-              >
-                Reset
-              </button>
-              <span className="accordion-arrow">{openSections.visualizer ? '▾' : '▸'}</span>
-            </div>
+            <span className="accordion-arrow" aria-hidden="true"><Chevron /></span>
           </div>
 
-          {openSections.visualizer && (
-            <div className="ctrl-group-body">
+          <div className="ctrl-group-body">
+            <div className="ctrl-group-body-inner">
+              <div className="field-wrap">
               <label className="field-label" htmlFor="preset-select">Active Preset</label>
-              <select
+              <PanelSelect
                 id="preset-select"
                 value={currentPreset}
-                onChange={(e) => setCurrentPreset(e.target.value)}
-                className="xp-select"
-                style={{ width: '100%', marginBottom: 8 }}
-              >
-                <option value="mellowDrift">Mellow Drift (Silk Instrumentals)</option>
-                <option value="prismaticGarden">Prismatic Garden (Flowing Petals)</option>
-                <option value="auroraSilk">Aurora Silk (Flowing Ribbons)</option>
-                <option value="liquidDrift">Liquid Drift (Liquid Mercury)</option>
-                <option value="arcticSwirl">Arctic Swirl (Whirlpool)</option>
-                <option value="laserSilk">Laser Silk (Contour Lasers)</option>
-                <option value="sonarBloom">Sonar Bloom (Ripple Rings)</option>
-                <option value="pastels">Pastels (Laser Threads)</option>
-                <option value="brat">brat (Audio Reactive Typography)</option>
-              </select>
+                options={PRESET_OPTIONS}
+                onChange={(v) => setCurrentPreset(v)}
+                ariaLabel="Active preset"
+              />
 
               {currentPreset === 'brat' && (
                 <label className="brat-bg-toggle" htmlFor="brat-white-bg">
@@ -156,10 +189,12 @@ export default function ControlPanel() {
                   <span className="brat-switch" aria-hidden="true" />
                 </label>
               )}
+              </div>
+              <p className="field-hint">Changes apply live.</p>
 
               <div className="sliders-container">
                 <div className="ctrl-row">
-                  <div className="label-with-tooltip">
+                  <div className="slider-label">
                     <label htmlFor="param-intensity">Intensity</label>
                   </div>
                   <input
@@ -169,13 +204,14 @@ export default function ControlPanel() {
                     max="3"
                     step="0.1"
                     value={params.intensity}
+                    style={{ ['--p' as string]: pct(params.intensity, 0.5, 3) }}
                     onChange={(e) => setParam('intensity', +e.target.value)}
                   />
                   <span className="val">{params.intensity.toFixed(1)}</span>
                 </div>
 
                 <div className="ctrl-row">
-                  <div className="label-with-tooltip">
+                  <div className="slider-label">
                     <label htmlFor="param-sensitivity">Sensitivity</label>
                   </div>
                   <input
@@ -185,13 +221,14 @@ export default function ControlPanel() {
                     max="5"
                     step="0.1"
                     value={params.sensitivity}
+                    style={{ ['--p' as string]: pct(params.sensitivity, 0.5, 5) }}
                     onChange={(e) => setParam('sensitivity', +e.target.value)}
                   />
-                  <span className="val">{params.sensitivity.toFixed(1)}x</span>
+                  <span className="val">{params.sensitivity.toFixed(1)}</span>
                 </div>
 
                 <div className="ctrl-row">
-                  <div className="label-with-tooltip">
+                  <div className="slider-label">
                     <label htmlFor="param-hueshift">Hue Shift</label>
                   </div>
                   <input
@@ -201,13 +238,14 @@ export default function ControlPanel() {
                     max="360"
                     step="1"
                     value={params.hueShift}
+                    style={{ ['--p' as string]: pct(params.hueShift, 0, 360) }}
                     onChange={(e) => setParam('hueShift', +e.target.value)}
                   />
                   <span className="val">{params.hueShift}°</span>
                 </div>
 
                 <div className="ctrl-row">
-                  <div className="label-with-tooltip">
+                  <div className="slider-label">
                     <label htmlFor="param-speed">Speed</label>
                   </div>
                   <input
@@ -217,13 +255,14 @@ export default function ControlPanel() {
                     max="3"
                     step="0.1"
                     value={params.speed}
+                    style={{ ['--p' as string]: pct(params.speed, 0.1, 3) }}
                     onChange={(e) => setParam('speed', +e.target.value)}
                   />
                   <span className="val">{params.speed.toFixed(1)}</span>
                 </div>
 
                 <div className="ctrl-row">
-                  <div className="label-with-tooltip">
+                  <div className="slider-label">
                     <label htmlFor="param-complexity">Complexity</label>
                   </div>
                   <input
@@ -233,50 +272,68 @@ export default function ControlPanel() {
                     max="3"
                     step="0.1"
                     value={params.complexity}
+                    style={{ ['--p' as string]: pct(params.complexity, 0.5, 3) }}
                     onChange={(e) => setParam('complexity', +e.target.value)}
                   />
                   <span className="val">{params.complexity.toFixed(1)}</span>
                 </div>
 
               </div>
+
+              <div className="reset-row">
+                <button
+                  className="btn-tiny"
+                  title="Reset sliders to defaults"
+                  onClick={() => resetParams()}
+                >
+                  Reset to defaults
+                </button>
+              </div>
             </div>
-          )}
+          </div>
         </div>
 
         {/* PRESET BOOKMARKS */}
-        <div className="ctrl-group">
+        <div className={`ctrl-group${openSections.presets ? ' open' : ''}`}>
           <div className="ctrl-group-header" role="button" tabIndex={0} aria-expanded={openSections.presets} onClick={() => toggleSection('presets')} onKeyDown={onHeaderKeyDown('presets')}>
-            <div className="ctrl-group-title">
-              <span>SAVED PRESETS</span>
+            <div className="ctrl-group-eyebrow-row">
+              <div className="ctrl-group-title">
+                <span>Saved presets</span>
+              </div>
+              {savedPresets.length > 0 && (
+                <span className="ctrl-group-count" aria-label={`${savedPresets.length} saved presets`}>{savedPresets.length}</span>
+              )}
             </div>
-            <span className="accordion-arrow">{openSections.presets ? '▾' : '▸'}</span>
+            <span className="accordion-arrow" aria-hidden="true"><Chevron /></span>
           </div>
 
-          {openSections.presets && (
-            <div className="ctrl-group-body">
-              <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+          <div className="ctrl-group-body">
+            <div className="ctrl-group-body-inner">
+              <div className="preset-actions">
                 <button
                   className="xp-btn primary"
                   onClick={() => setShowSave(!showSave)}
-                  style={{ flex: 1 }}
                 >
-                  {showSave ? 'Cancel' : '+ Save Preset'}
+                  {showSave ? 'Cancel' : '+ Save current'}
                 </button>
                 <button
                   className="xp-btn"
                   onClick={handleShare}
-                  style={{ flex: 1 }}
                   title="Copy shareable preset link to clipboard"
                 >
-                  {copiedNotification ? 'Copied!' : 'Share Link'}
+                  {copiedNotification ? 'Copied' : 'Share link'}
                 </button>
               </div>
 
               {showSave && (
                 <div className="save-preset-bar">
+                  <label htmlFor="save-preset-name" className="sr-only">
+                    Preset name
+                  </label>
                   <input
+                    id="save-preset-name"
                     type="text"
-                    placeholder="Enter preset name..."
+                    placeholder="Name this look..."
                     value={saveName}
                     onChange={(e) => setSaveName(e.target.value)}
                     onKeyDown={(e) => {
@@ -296,41 +353,40 @@ export default function ControlPanel() {
 
               <div className="preset-list">
                 {savedPresets.map((p) => (
-                  <div
-                    key={p.id}
-                    className="preset-chip"
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => loadPreset(p.id)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault()
-                        loadPreset(p.id)
-                      }
-                    }}
-                    title={`Load "${p.name}"`}
-                  >
-                    <span className="chip-name">{p.name}</span>
+                  <div key={p.id} className="preset-chip">
+                    <button
+                      type="button"
+                      className="chip-load"
+                      onClick={() => loadPreset(p.id)}
+                      title={`Load "${p.name}"`}
+                    >
+                      <span className="chip-name">{p.name}</span>
+                    </button>
                     <button
                       type="button"
                       className="del"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        deletePreset(p.id)
-                      }}
+                      onClick={() => deletePreset(p.id)}
                       aria-label={`Delete preset ${p.name}`}
                       title="Delete preset"
                     >
-                      ×
+                      x
                     </button>
                   </div>
                 ))}
                 {savedPresets.length === 0 && (
-                  <span className="no-presets-text">No custom presets yet — save your first one.</span>
+                  <div className="preset-empty">
+                    <div className="preset-empty-icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1" />
+                        <circle cx="12" cy="12" r="3.2" />
+                      </svg>
+                    </div>
+                    <div className="preset-empty-text">No custom presets yet.</div>
+                  </div>
                 )}
               </div>
             </div>
-          )}
+          </div>
         </div>
       </div>
       <div className="xp-toast-region" role="status" aria-live="polite">

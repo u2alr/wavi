@@ -9,3 +9,9 @@
 
 [build.environment]
   NODE_VERSION = "20"
+
+[[redirects]]
+  from = "/api/canvas"
+  to = "https://spotify-canva.vercel.app/api/canvas"
+  status = 200
+  force = true

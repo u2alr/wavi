@@ -9,14 +9,11 @@ function artFor(track: { album?: { images?: { url: string }[] } }): string | nul
 }
 import {
   ensureSpotifyPlayer,
-  nextSpotify,
-  pauseSpotify,
   playTracks,
-  previousSpotify,
-  resumeSpotify,
   setPendingTrackId,
   transferPlaybackToDevice,
 } from '../spotifyPlayer'
+import PanelSelect from './PanelSelect'
 export default function SpotifyPanel() {
   const isSpotifyAuthed = useStore((s) => s.isSpotifyAuthed)
   const playlists = useStore((s) => s.spotifyPlaylists)
@@ -44,17 +41,6 @@ export default function SpotifyPanel() {
     localStorage.setItem('viz-last-spotify-track', JSON.stringify({
       uri: track.uri, name: track.name, playlistId,
     }))
-  }
-
-  const loadLastTrack = () => {
-    try {
-      return JSON.parse(localStorage.getItem('viz-last-spotify-track') || 'null') as {
-        uri: string
-        name: string
-      } | null
-    } catch {
-      return null
-    }
   }
 
   const fail = (err: unknown, retry?: () => void) => {
@@ -131,35 +117,6 @@ export default function SpotifyPanel() {
     }
   }
 
-  const togglePlay = async () => {
-    try {
-      if (playing) {
-        await pauseSpotify()
-        setPlaying(false)
-      } else {
-        const saved = loadLastTrack()
-        const deviceId = await ensureSpotifyPlayer()
-        await transferPlaybackToDevice(deviceId)
-        if (saved && tracks.length === 0) {
-          await playTracks([saved.uri], 0, deviceId)
-          setCurrentTrack({
-            id: saved.uri.split(':').pop() || saved.uri,
-            name: saved.name,
-            uri: saved.uri,
-            duration_ms: 0,
-            album: { id: '', name: '', images: [] },
-            artists: [],
-          })
-        } else {
-          await resumeSpotify()
-        }
-        setPlaying(true)
-      }
-    } catch (err) {
-      fail(err)
-    }
-  }
-
   const runSearch = async (query: string) => {
     setLoading(true)
     clearError()
@@ -170,6 +127,11 @@ export default function SpotifyPanel() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const clearSearch = () => {
+    setSearchQuery('')
+    setSearchResults([])
   }
 
   const searchTracks = (event: React.FormEvent) => {
@@ -229,40 +191,43 @@ export default function SpotifyPanel() {
               aria-label="Dismiss error"
               title="Dismiss"
             >
-              ×
+              x
             </button>
           </div>
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
-        <select
+      <div className="field-wrap">
+        <label className="field-label" htmlFor="spotify-playlist-select">Playlist</label>
+        <div className="spotify-playlist-row">
+        <PanelSelect
+          id="spotify-playlist-select"
           value={selectedPlaylistId}
-          className="xp-select"
-          aria-label="Choose a Spotify playlist"
-          onChange={(e) => {
-            if (e.target.value) playPlaylist(e.target.value)
+          options={playlists.map((p) => ({ value: p.id, label: p.name }))}
+          onChange={(v) => {
+            if (v) playPlaylist(v)
           }}
-          style={{ flex: 1, minWidth: 0 }}
-        >
-          <option value="">{loading ? 'Loading playlists…' : 'Choose playlist…'}</option>
-          {playlists.map((p) => (
-            <option key={p.id} value={p.id}>{p.name}</option>
-          ))}
-        </select>
-        <button
-          className="xp-btn"
-          onClick={loadPlaylists}
-          disabled={loading}
-          title="Reload your playlists from Spotify"
-          aria-label="Reload playlists"
-        >
-          <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M23 4v6h-6" />
-            <path d="M1 20v-6h6" />
-            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-          </svg>
-        </button>
+          placeholder={loading ? 'Loading playlists...' : 'Choose playlist...'}
+          ariaLabel="Choose a Spotify playlist"
+          disabled={loading && playlists.length === 0}
+        />
+        {loading ? (
+          <span className="loading-indicator" aria-label="Loading" />
+        ) : (
+          <button
+            className="xp-btn spotify-reload-btn"
+            onClick={loadPlaylists}
+            title="Reload your playlists from Spotify"
+            aria-label="Reload playlists"
+          >
+            <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M23 4v6h-6" />
+              <path d="M1 20v-6h6" />
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+            </svg>
+          </button>
+        )}
+        </div>
       </div>
 
       <form className="spotify-search" onSubmit={searchTracks}>
@@ -276,13 +241,24 @@ export default function SpotifyPanel() {
           type="search"
           value={searchQuery}
           onChange={(event) => setSearchQuery(event.target.value)}
-          placeholder="Search all of Spotify…"
+          placeholder="Search all of Spotify..."
           aria-label="Search all of Spotify for songs or artists"
         />
+        {searchResults.length > 0 && (
+          <button
+            type="button"
+            className="search-clear"
+            onClick={clearSearch}
+            aria-label="Clear search results"
+            title="Clear search"
+          >
+            x
+          </button>
+        )}
       </form>
 
       {searchResults.length > 0 && (
-        <div className="spotify-track-list spotify-search-results" role="listbox" aria-label="Search results">
+        <div className="spotify-track-list spotify-search-results" aria-label="Search results">
           {searchResults.map((track) => {
             const art = artFor(track)
             return (
@@ -312,36 +288,17 @@ export default function SpotifyPanel() {
         </div>
       )}
 
-      <div className="spotify-controls">
-        <button className="xp-btn" onClick={() => previousSpotify().catch(fail)} title="Previous">
-          <svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor">
-            <polygon points="19 20 9 12 19 4 19 20" />
-            <rect x="5" y="4" width="2.5" height="16" />
-          </svg>
-        </button>
-        <button className="xp-btn" onClick={togglePlay} title={playing ? 'Pause' : 'Play'}>
-          {playing ? (
-            <svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor">
-              <rect x="5" y="4" width="4" height="16" />
-              <rect x="15" y="4" width="4" height="16" />
-            </svg>
-          ) : (
-            <svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor">
-              <polygon points="6 4 20 12 6 20 6 4" />
-            </svg>
-          )}
-        </button>
-        <button className="xp-btn" onClick={() => nextSpotify().catch(fail)} title="Next">
-          <svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor">
-            <polygon points="5 4 15 12 5 20 5 4" />
-            <rect x="16.5" y="4" width="2.5" height="16" />
-          </svg>
-        </button>
-      </div>
       {showEmptyState ? (
         <div className="spotify-empty">
-          <div className="spotify-empty-icon">🎵</div>
-          <div className="spotify-empty-text">Select a playlist or search to start picking songs.</div>
+          <div className="spotify-empty-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 18V5l10-2v13" />
+              <circle cx="6.5" cy="18" r="2.5" />
+              <circle cx="16.5" cy="16" r="2.5" />
+            </svg>
+          </div>
+          <div className="spotify-empty-text">Pick a playlist or search to queue songs.</div>
+          <div className="spotify-empty-hint">Results appear here instantly.</div>
         </div>
       ) : (
         tracks.length > 0 && (

@@ -121,3 +121,7 @@ export function setAudioVolume(volume: number) {
     gainNode.gain.value = Math.max(0, Math.min(1, volume))
   }
 }
+export function getSampleRate(): number {
+  // fallback matters when extension audio is active and no real AudioContext exists yet
+  return audioContext?.sampleRate ?? 48000
+}

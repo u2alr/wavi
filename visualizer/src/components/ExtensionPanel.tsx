@@ -38,29 +38,13 @@ export default function ExtensionPanel({ status }: { status: string }) {
 
   return (
     <div
-      className="extension-panel"
-      style={{
-        border: '1px solid rgba(0, 0, 0, 0.08)',
-        background: isLive ? '#eef7d8' : '#f4f4f6',
-        borderRadius: 8,
-        padding: '8px 10px',
-        marginBottom: 8,
-      }}
+      className={`extension-panel${isLive ? ' is-live' : ''}${isError ? ' is-error' : ''}`}
       role="status"
       aria-label="Audio extension status"
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span
-          style={{
-            width: 10,
-            height: 10,
-            borderRadius: '50%',
-            background: dotColor,
-            display: 'inline-block',
-            flexShrink: 0,
-          }}
-        />
-        <span style={{ fontSize: 12, fontWeight: 'bold', flex: 1 }}>{label}</span>
+      <div className="ext-panel-header">
+        <span className="ext-panel-dot" style={{ background: dotColor }} />
+        <span className="ext-panel-label">{label}</span>
         <button
           className="btn-tiny"
           onClick={() => setExpanded((v) => !v)}
@@ -71,13 +55,13 @@ export default function ExtensionPanel({ status }: { status: string }) {
       </div>
 
       {!isLive && (
-        <div style={{ fontSize: 11, marginTop: 6, color: '#6e6e73' }}>
+        <div className="ext-panel-subtitle">
           Visuals stay idle without the extension. No synthetic estimate is used.
         </div>
       )}
 
       {expanded && (
-        <ol style={{ fontSize: 11, margin: '8px 0 4px 16px', padding: 0, lineHeight: 1.6 }}>
+        <ol className="ext-panel-steps">
           <li>
             Open <code>chrome://extensions</code> (or <code>edge://extensions</code>), enable{' '}
             <b>Developer mode</b>.
