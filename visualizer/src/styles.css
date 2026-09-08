@@ -1,6 +1,6 @@
 /* ══════════════════════════════════════════════════════════════════════════════
    wavi.lol — Apple HIG / macOS porcelain + graphite design system
-   Lime #8ACE00 is the single accent color.
+   Soft pastel green #C3F588 is the accent (dark palette; lime legacy block left below).
    ══════════════════════════════════════════════════════════════════════════════ */
 
 :root {
@@ -1386,11 +1386,8 @@ body::before {
 }
 
 .spotify-track.active {
-  background: var(--wavi-accent-tint-soft) !important;
-}
-
-.spotify-track.active .spotify-track-title {
-  color: var(--wavi-accent-ink) !important;
+  background: transparent;
+  border-color: var(--wavi-accent);
 }
 
 .spotify-track-art {
@@ -1419,14 +1416,14 @@ body::before {
   align-items: flex-end;
   gap: 2px;
   height: 11px;
-  margin-right: 6px;
-  vertical-align: baseline;
+  margin-left: 8px;
+  flex-shrink: 0;
 }
 
 .spotify-eq span {
   display: block;
   width: 3px;
-  background: var(--wavi-accent-ink);
+  background: var(--wavi-accent);
   border-radius: 1px;
   transform-box: fill-box;
   transform-origin: 50% 100%;
@@ -3054,7 +3051,7 @@ select.xp-select:focus-visible, .xp-input:focus-visible,
 }
 
 .control-panel {
-  width: 350px;
+  width: 372px;
   background: var(--panel-bg);
   border-left: none;
   box-shadow: none;
@@ -3471,13 +3468,8 @@ select.xp-select:focus-visible,
 }
 
 .spotify-track.active {
-  background: color-mix(in srgb, var(--wavi-accent) 16%, transparent);
-  border-color: color-mix(in srgb, var(--wavi-accent) 45%, transparent);
-  box-shadow: inset 3px 0 0 var(--wavi-accent);
-}
-
-.spotify-track.active .spotify-track-title {
-  color: inherit;
+  background: transparent;
+  border-color: var(--wavi-accent);
 }
 
 /* Section labels separating search results from the playlist queue. */
@@ -3937,11 +3929,11 @@ input[type="range"]:focus-visible {
 
 /* Dark mode palette inspired by the MiniCorp reference. */
 :root {
-  --wavi-accent: #0a84ff;
-  --wavi-accent-hover: #158cff;
+  --wavi-accent: #c3f588;
+  --wavi-accent-hover: #d5ff9f;
   --wavi-accent-ink: #f4f8ff;
-  --wavi-accent-tint: rgba(10, 132, 255, 0.18);
-  --wavi-accent-tint-soft: rgba(10, 132, 255, 0.15);
+  --wavi-accent-tint: rgba(195, 245, 136, 0.14);
+  --wavi-accent-tint-soft: rgba(195, 245, 136, 0.12);
   --panel-bg: #0b0b0d;
   --panel-bg-strong: #111113;
   --panel-card-dark: #1b1b1f;
@@ -3953,7 +3945,7 @@ input[type="range"]:focus-visible {
   --panel-line-strong: rgba(255, 255, 255, 0.14);
   --panel-fill: rgba(255, 255, 255, 0.055);
   --panel-fill-hover: rgba(255, 255, 255, 0.095);
-  --panel-focus: rgba(10, 132, 255, 0.36);
+  --panel-focus: rgba(195, 245, 136, 0.42);
   --xp-text: var(--panel-ink);
   --xp-text-dim: var(--panel-muted);
   --wavi-error-surface: rgba(255, 69, 58, 0.12);
@@ -3964,9 +3956,9 @@ input[type="range"]:focus-visible {
 body {
   background-color: #050506;
   background-image:
-    radial-gradient(900px 540px at 18% 0%, rgba(10, 132, 255, 0.14), transparent 58%),
-    radial-gradient(720px 520px at 88% 20%, rgba(255, 255, 255, 0.06), transparent 60%),
-    linear-gradient(180deg, #151518 0%, #08080a 62%, #050506 100%);
+    radial-gradient(900px 540px at 18% 0%, rgba(195, 245, 136, 0.07), transparent 58%),
+    radial-gradient(720px 520px at 88% 20%, rgba(255, 255, 255, 0.03), transparent 60%),
+    linear-gradient(180deg, #121216 0%, #0a0a0d 60%, #070709 100%);
 }
 
 .xp-window {
@@ -4025,9 +4017,6 @@ body {
     linear-gradient(180deg, rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0)),
     var(--panel-bg);
   border-left-color: rgba(255, 255, 255, 0.08);
-  box-shadow:
-    inset 1px 0 0 rgba(255, 255, 255, 0.04),
-    -18px 0 42px rgba(0, 0, 0, 0.34);
   color: var(--panel-ink);
 }
 
@@ -4107,7 +4096,7 @@ select.xp-select,
 .audio-player-box .apb-time,
 .audio-player-box .apb-vol-val { color: var(--apb-dim, #a5a7ad); }
 .audio-player-box .apb-mute-btn { color: var(--apb-dim, #a5a7ad); }
-.audio-player-box .apb-eq span { background: var(--apb-ink, #0a84ff); }
+.audio-player-box .apb-eq span { background: var(--apb-ink, #c3f588); }
 .audio-player-box .apb-eq { background: var(--apb-g3, #202126); }
 .audio-player-box .apb-volume {
   background: var(--apb-g3, #202126);
@@ -4141,16 +4130,19 @@ select.xp-select,
   background: var(--panel-card-dark-hover);
 }
 
-.spotify-track.active,
 .panel-select-option.selected {
-  background: rgba(10, 132, 255, 0.16) !important;
+  background: color-mix(in srgb, var(--wavi-accent) 14%, transparent) !important;
 }
 
 .spotify-track.active {
-  box-shadow: inset 3px 0 0 var(--wavi-accent);
+  background: transparent !important;
+  border-color: var(--wavi-accent) !important;
 }
 
-.spotify-track.active .spotify-track-title,
+.spotify-track.active:hover {
+  background: color-mix(in srgb, var(--wavi-accent) 8%, transparent) !important;
+}
+
 .spotify-eq span {
   color: var(--panel-ink) !important;
   background: var(--wavi-accent);
@@ -4191,7 +4183,7 @@ select.xp-select:focus-visible,
 .xp-input:focus-visible,
 .spotify-search input:focus-visible {
   background: #1a1b20;
-  border-color: rgba(10, 132, 255, 0.66);
+  border-color: rgba(195, 245, 136, 0.5);
 }
 
 .panel-select-chevron-slot,
@@ -4221,11 +4213,11 @@ select.xp-select:focus-visible,
 
 .apb-bar,
 input[type="range"]::-webkit-slider-runnable-track {
-  background: linear-gradient(to right, var(--wavi-accent) 0 var(--p), rgba(255, 255, 255, 0.14) var(--p) 100%);
+  background: linear-gradient(to right, var(--wavi-accent) 0 var(--p), rgba(255, 255, 255, 0.09) var(--p) 100%);
 }
 
 .apb-fill {
-  background: linear-gradient(90deg, #0a84ff, #5eb1ff);
+  background: var(--wavi-accent);
 }
 
 .apb-eq span {
@@ -4253,14 +4245,14 @@ input[type="range"]::-webkit-slider-runnable-track {
 }
 
 .xp-btn.primary {
-  color: #f5f9ff;
-  border-color: rgba(10, 132, 255, 0.6);
-  background: #0d5aa7;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  color: #152004;
+  border-color: rgba(195, 245, 136, 0.55);
+  background: #c3f588;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
 }
 
 .xp-btn.primary:hover {
-  background: #1268bd;
+  background: #d5ff9f;
 }
 
 input[type="range"]::-webkit-slider-thumb {
@@ -4269,7 +4261,7 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 input[type="range"]::-moz-range-track {
-  background: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.09);
 }
 
 input[type="range"]::-moz-range-progress {
@@ -4310,8 +4302,8 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .extension-panel.is-live {
-  background: rgba(10, 132, 255, 0.12);
-  border-color: rgba(10, 132, 255, 0.28);
+  background: rgba(195, 245, 136, 0.1);
+  border-color: rgba(195, 245, 136, 0.22);
 }
 
 .control-panel-scroll,
@@ -4470,7 +4462,7 @@ input[type="range"]::-moz-range-thumb {
 
 /* Focus ring must read on lime tints too. */
 .audio-player-box .apb-track:focus-visible {
-  outline-color: var(--apb-ink, #0a84ff);
+  outline-color: var(--apb-ink, #c3f588);
 }
 
 /* Progress: flat opaque ink-on-g3 track, dim accent fill, permanent thumb. */
@@ -4572,57 +4564,13 @@ input[type="range"]::-moz-range-thumb {
 /* ═══ SIDE PANEL POLISH — flat dark inspector ═════════════════════════
    Appended last so every rule wins the earlier light, overhaul, and
    MiniCorp-dark generations.
-   1. Header hosts the live preset picker (caption + compact select).
-   2. Audio source & Visualizer surfaces flatten: no nested boxes, only
+   1. Audio source & Visualizer surfaces flatten: no nested boxes, only
       hairline separators between rows.
-   3. Collapsed panel pulls its children out of the tab order.
-   4. Touch & motion additions.
+   2. Collapsed panel pulls its children out of the tab order.
+   3. Touch & motion additions.
 */
 
-/* 1. Header: contextual preset caption + picker. */
-.panel-header {
-  min-height: 64px;
-  align-items: center;
-}
-
-.panel-header .panel-header-eyebrow {
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  line-height: 1.25;
-  text-transform: none;
-  color: var(--panel-muted);
-}
-
-.panel-header-copy {
-  justify-content: center;
-  gap: 3px;
-}
-
-.panel-preset {
-  min-width: 0;
-}
-
-.panel-preset .panel-select {
-  flex: 1;
-}
-
-.panel-preset .panel-select-trigger {
-  height: 30px;
-  min-height: 30px;
-  padding: 3px 3px 3px 9px;
-  border-radius: 8px;
-  font-size: 12.5px;
-  font-weight: 620;
-}
-
-.panel-preset .panel-select-popover {
-  top: calc(100% + 8px);
-  left: 0;
-  right: 0;
-}
-
-/* 2. Audio source: flat rows on the panel surface. */
+/* 1. Audio source: flat rows on the panel surface. */
 .audio-source-group .ctrl-group-body-inner {
   width: auto;
   min-width: 0;
@@ -4693,9 +4641,8 @@ input[type="range"]::-moz-range-thumb {
   border-top: 1px solid var(--panel-line);
 }
 
-/* 3. Collapse must remove children from the tab order. */
+/* 2. Collapse must remove children from the tab order. */
 .control-panel.collapsed .control-panel-scroll,
-.control-panel.collapsed .panel-header,
 .control-panel.collapsed .panel-footer {
   opacity: 0;
   pointer-events: none;
@@ -4704,26 +4651,16 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .control-panel:not(.collapsed) .control-panel-scroll,
-.control-panel:not(.collapsed) .panel-header,
 .control-panel:not(.collapsed) .panel-footer {
   visibility: visible;
   transition: opacity var(--panel-dur) ease, visibility 0s;
 }
 
-/* 4. Touch & motion. */
-@media (pointer: coarse) {
-  .panel-preset .panel-select-trigger {
-    height: 40px;
-    min-height: 40px;
-  }
-}
-
+/* 3. Touch & motion. */
 @media (prefers-reduced-motion: reduce) {
   .control-panel.collapsed .control-panel-scroll,
-  .control-panel.collapsed .panel-header,
   .control-panel.collapsed .panel-footer,
   .control-panel:not(.collapsed) .control-panel-scroll,
-  .control-panel:not(.collapsed) .panel-header,
   .control-panel:not(.collapsed) .panel-footer {
     transition: opacity 0.01ms linear, visibility 0s linear;
   }

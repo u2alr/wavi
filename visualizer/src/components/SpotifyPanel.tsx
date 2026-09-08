@@ -305,6 +305,13 @@ export default function SpotifyPanel() {
                   <div className="spotify-track-title">{track.name}</div>
                   <div className="spotify-track-artist">{track.artists.map((artist) => artist.name).join(', ')}</div>
                 </div>
+                {isActive && playing && (
+                  <span className="spotify-eq" aria-hidden="true">
+                    <span />
+                    <span />
+                    <span />
+                  </span>
+                )}
               </button>
             )
           })}
@@ -344,20 +351,18 @@ export default function SpotifyPanel() {
                   <span className="spotify-track-index">{i + 1}</span>
                   {art && <img src={art} alt="" className="spotify-track-art" loading="lazy" />}
                   <div className="spotify-track-meta">
-                    <div className="spotify-track-title">
-                      {isActive && playing && (
-                        <span className="spotify-eq" aria-hidden="true">
-                          <span />
-                          <span />
-                          <span />
-                        </span>
-                      )}
-                      {t.name}
-                    </div>
+                    <div className="spotify-track-title">{t.name}</div>
                     <div className="spotify-track-artist">
                       {t.artists.map((a) => a.name).join(', ')}
                     </div>
                   </div>
+                  {isActive && playing && (
+                    <span className="spotify-eq" aria-hidden="true">
+                      <span />
+                      <span />
+                      <span />
+                    </span>
+                  )}
                 </button>
               )
             })}

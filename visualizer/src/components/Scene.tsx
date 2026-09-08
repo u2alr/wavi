@@ -758,7 +758,7 @@ function ChromaticBurstPreset() {
         hues[0]=0.97; hues[1]=0.05; hues[2]=0.13; hues[3]=0.30;
         hues[4]=0.45; hues[5]=0.60; hues[6]=0.78;
 
-        vec3 col=vec3(0.008,0.008,0.025);
+        vec3 col=vec3(0.00,0.000,0.00);
         col+=hsv(vec3(fract(hs+0.5),0.5,1.0))*fbm(p*3.0+t*0.1)*0.015*audio;
 
         for(int layer=0;layer<3;layer++){

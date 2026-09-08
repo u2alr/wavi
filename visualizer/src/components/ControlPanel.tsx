@@ -3,8 +3,6 @@ import { useStore } from '../store'
 import SpotifyAuth from './SpotifyAuth'
 import SpotifyPanel from './SpotifyPanel'
 import AudioPlayerBox from './AudioPlayerBox'
-import PanelSelect from './PanelSelect'
-import { PRESET_OPTIONS } from '../presets'
 
 function Chevron() {
   return (
@@ -29,10 +27,8 @@ export default function ControlPanel({
   const bratWhiteBg = useStore((s) => s.bratWhiteBg)
   const bratKaraoke = useStore((s) => s.bratKaraoke)
 
-  const setCurrentPreset = useStore((s) => s.setCurrentPreset)
   const setParam = useStore((s) => s.setParam)
   const resetParams = useStore((s) => s.resetParams)
-  const togglePanelCollapsed = useStore((s) => s.togglePanelCollapsed)
   const setBratWhiteBg = useStore((s) => s.setBratWhiteBg)
   const setBratKaraoke = useStore((s) => s.setBratKaraoke)
 
@@ -58,39 +54,6 @@ export default function ControlPanel({
 
   return (
     <aside className={`control-panel ${isPanelCollapsed ? 'collapsed' : ''}`} aria-label="Visualizer Controls">
-      {isPanelCollapsed && (
-        <button className="panel-reopen" onClick={togglePanelCollapsed} title="Expand Controls (Tab / H)" aria-label="Expand Control Panel" aria-expanded={!isPanelCollapsed}>
-          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M10 4L6 8l4 4" />
-          </svg>
-        </button>
-      )}
-      <div className="panel-header">
-        <div className="panel-header-copy">
-          <span className="panel-header-eyebrow">Preset</span>
-          <div className="panel-preset">
-            <PanelSelect
-              id="preset-select"
-              value={currentPreset}
-              options={PRESET_OPTIONS}
-              onChange={setCurrentPreset}
-              ariaLabel="Choose visualizer preset"
-            />
-          </div>
-        </div>
-        <button
-          className="panel-collapse-btn"
-          onClick={togglePanelCollapsed}
-          title="Collapse Controls (Tab / H)"
-          aria-label="Collapse Control Panel"
-          aria-expanded={!isPanelCollapsed}
-        >
-          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M6 4l4 4-4 4" />
-          </svg>
-        </button>
-      </div>
-
       <div className="control-panel-scroll">
         {/* AUDIO SOURCE SECTION */}
         <div className={`ctrl-group audio-source-group${openSections.audio ? ' open' : ''}`}>
