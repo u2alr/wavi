@@ -172,7 +172,23 @@ export async function exchangeCodeForToken(code: string): Promise<SpotifyTokens>
   )
   saveTokens(tokens)
   sessionStorage.removeItem(VERIFIER_KEY)
+  // Fresh login may mean a different app (possibly with catalog access).
+  catalogSearchBlocked = false
   return tokens
+}
+
+/** Error from the Spotify Web API — carries the status so callers can recover. */
+export class SpotifyApiError extends Error {
+  status: number
+  reason: string
+  serverMessage: string
+  constructor(status: number, message: string, opts?: { reason?: string; serverMessage?: string }) {
+    super(message)
+    this.name = 'SpotifyApiError'
+    this.status = status
+    this.reason = opts?.reason ?? ''
+    this.serverMessage = opts?.serverMessage ?? ''
+  }
 }
 
 /** Generic authenticated fetch to the Spotify Web API. */
@@ -199,23 +215,63 @@ export async function spotifyApi<T>(path: string, init?: RequestInit): Promise<T
     }
     if (res.status === 401) {
       clearTokens()
-      throw new Error('Your Spotify session expired. Reconnect and try again.')
+      throw new SpotifyApiError(res.status, 'Your Spotify session expired. Reconnect and try again.')
     }
   }
   if (res.status === 204) return undefined as T
   if (!res.ok) {
     const detail = await res.text()
     console.error(`Spotify API error (${res.status})${detail ? `: ${detail}` : ''}`)
+    // Spotify usually explains itself in the body
+    // ({"error": {"message": "...", "reason": "PREMIUM_REQUIRED"}}) — surface
+    // its words instead of a generic banner so failures stay diagnosable.
+    let serverMessage = ''
+    let reason = ''
+    try {
+      const parsed = JSON.parse(detail) as { error?: { message?: string; reason?: string } }
+      serverMessage = parsed?.error?.message ?? ''
+      reason = parsed?.error?.reason ?? ''
+    } catch {
+      // Non-JSON error body — fall through to the generic copy below.
+    }
     if (res.status === 429) {
-      throw new Error("Spotify is rate-limiting us. Wait a moment, then tap Retry.")
+      throw new SpotifyApiError(res.status, "Spotify is rate-limiting us. Wait a moment, then tap Retry.", {
+        reason,
+        serverMessage,
+      })
     }
     if (res.status >= 500) {
-      throw new Error("Spotify's servers hiccuped. Tap Retry in a moment.")
+      throw new SpotifyApiError(res.status, "Spotify's servers hiccuped. Tap Retry in a moment.", {
+        reason,
+        serverMessage,
+      })
     }
     if (res.status === 403) {
-      throw new Error('Spotify refused that request. A Premium account may be required.')
+      if (reason === 'PREMIUM_REQUIRED') {
+        throw new SpotifyApiError(
+          res.status,
+          'In-app playback needs Spotify Premium. Play in the Spotify app instead — lyrics will still follow along.',
+          { reason, serverMessage },
+        )
+      }
+      throw new SpotifyApiError(res.status, 'Spotify refused that request. A Premium account may be required.', {
+        reason,
+        serverMessage,
+      })
     }
-    throw new Error("Couldn't reach Spotify. Check your connection and tap Retry.")
+    if (res.status === 400) {
+      throw new SpotifyApiError(
+        res.status,
+        serverMessage && serverMessage !== 'Bad request'
+          ? `Spotify rejected that request (${serverMessage}). Tap Retry — if it keeps happening, reconnect Spotify.`
+          : 'Spotify rejected that request. Tap Retry — if it keeps happening, reconnect Spotify.',
+        { reason, serverMessage },
+      )
+    }
+    throw new SpotifyApiError(res.status, "Couldn't reach Spotify. Check your connection and tap Retry.", {
+      reason,
+      serverMessage,
+    })
   }
   const body = await res.text()
   if (!body.trim()) return undefined as T
@@ -251,11 +307,48 @@ export async function getPlaylistTracks(playlistId: string, limit = 50): Promise
     .filter((t): t is SpotifyTrack => !!t)
 }
 
-export async function searchSpotifyTracks(query: string, limit = 20): Promise<SpotifyTrack[]> {
-  const data = await spotifyApi<{ tracks: { items: SpotifyTrack[] } }>(
-    `/search?q=${encodeURIComponent(query)}&type=track&limit=${limit}`,
-  )
-  return data.tracks?.items ?? []
+const CATALOG_BLOCKED_MESSAGE =
+  'Spotify blocks catalog search for newer developer apps (they need Extended Quota Mode since Nov 2024). Showing matches from your loaded tracks instead — pick a playlist above to search more of your library.'
+
+/**
+ * Set once Spotify refuses a /search call: since Nov 27 2024, developer
+ * apps without Extended Quota Mode are blocked from catalog endpoints and
+ * get a misleading 400 "Invalid limit". Remember it for the session so we
+ * skip straight to the local fallback instead of re-failing every search.
+ */
+let catalogSearchBlocked = false
+
+export async function searchSpotifyTracks(query: string, limit = 10): Promise<SpotifyTrack[]> {
+  if (catalogSearchBlocked) {
+    throw new SpotifyApiError(400, CATALOG_BLOCKED_MESSAGE, { reason: 'CATALOG_BLOCKED' })
+  }
+  // /search caps limit at 10 (anything above fails with "Invalid limit").
+  const safeLimit = Math.min(10, Math.max(1, Math.floor(limit) || 10))
+  const params = new URLSearchParams({
+    q: query,
+    type: 'track',
+    limit: String(safeLimit),
+  })
+  // NOTE: no `market` param — `from_token` was deprecated in Spotify's Nov
+  // 2024 changes and fails the same misleading way.
+  try {
+    const data = await spotifyApi<{ tracks: { items: SpotifyTrack[] } }>(
+      `/search?${params.toString()}`,
+    )
+    return data.tracks?.items ?? []
+  } catch (err) {
+    if (err instanceof SpotifyApiError && err.status === 400) {
+      // Params above are valid, so a 400 here is the dev-mode catalog block,
+      // not a bad request (Spotify's message is misleading — the restriction
+      // is on the app, which also explains why playlists/playback keep working).
+      catalogSearchBlocked = true
+      throw new SpotifyApiError(400, CATALOG_BLOCKED_MESSAGE, {
+        reason: 'CATALOG_BLOCKED',
+        serverMessage: err.serverMessage,
+      })
+    }
+    throw err
+  }
 }
 
 async function refreshTokens(refreshToken: string): Promise<SpotifyTokens> {

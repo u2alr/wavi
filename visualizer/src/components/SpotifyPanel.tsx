@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useStore } from '../store'
-import { getPlaylistTracks, getUserPlaylists, searchSpotifyTracks } from '../spotify'
+import { getPlaylistTracks, getUserPlaylists, searchSpotifyTracks, SpotifyApiError } from '../spotify'
 
 /** Smallest album-art thumbnail (Spotify returns images largest-first). */
 function artFor(track: { album?: { images?: { url: string }[] } }): string | null {
@@ -20,6 +20,7 @@ export default function SpotifyPanel() {
   const tracks = useStore((s) => s.spotifyTracks)
   const index = useStore((s) => s.spotifyIndex)
   const playing = useStore((s) => s.spotifyPlaying)
+  const currentTrackId = useStore((s) => s.spotifyCurrentTrack?.id ?? null)
 
   const setPlaylists = useStore((s) => s.setSpotifyPlaylists)
   const setTracks = useStore((s) => s.setSpotifyTracks)
@@ -123,6 +124,17 @@ export default function SpotifyPanel() {
     try {
       setSearchResults(await searchSpotifyTracks(query))
     } catch (err) {
+      // Dev-mode apps can't hit /search at all — fall back to filtering the
+      // already-loaded playlist tracks so the box stays useful.
+      if (err instanceof SpotifyApiError && err.reason === 'CATALOG_BLOCKED') {
+        const q = query.toLowerCase()
+        const local = tracks.filter(
+          (t) =>
+            t.name.toLowerCase().includes(q) ||
+            t.artists.some((a) => a.name.toLowerCase().includes(q)),
+        )
+        setSearchResults(local)
+      }
       fail(err, () => runSearch(query).catch(() => {}))
     } finally {
       setLoading(false)
@@ -145,6 +157,9 @@ export default function SpotifyPanel() {
     clearError()
     setPendingTrack(track.id)
     try {
+      // The queue is now this single track, not the playlist — clear the
+      // selection so the dropdown stops claiming a playlist it isn't showing.
+      setSelectedPlaylistId('')
       setTracks([track])
       setCurrentTrack(track)
       setTrackName(track.name)
@@ -165,6 +180,11 @@ export default function SpotifyPanel() {
   if (!isSpotifyAuthed) return null
 
   const showEmptyState = tracks.length === 0 && searchResults.length === 0
+  // Labels only when both lists are visible — that's when they blur together.
+  const showLabels = searchResults.length > 0 && tracks.length > 0
+  const playlistLabel = selectedPlaylistId
+    ? (playlists.find((p) => p.id === selectedPlaylistId)?.name ?? 'Playlist tracks')
+    : 'Now playing'
 
   return (
     <div className="spotify-panel">
@@ -257,16 +277,20 @@ export default function SpotifyPanel() {
       </form>
 
       {searchResults.length > 0 && (
-        <div className="spotify-track-list spotify-search-results" aria-label="Search results">
+        <>
+          {showLabels && <div className="spotify-list-label">Search results</div>}
+          <div className="spotify-track-list spotify-search-results" aria-label="Search results">
           {searchResults.map((track) => {
             const art = artFor(track)
+            const isActive = track.id === currentTrackId
             return (
               <button
                 key={track.id}
                 type="button"
-                className={`spotify-track${pendingTrackId === track.id ? ' is-pending' : ''}`}
+                className={`spotify-track${isActive ? ' active' : ''}${pendingTrackId === track.id ? ' is-pending' : ''}`}
                 onClick={() => playSearchResult(track)}
                 aria-label={`Play ${track.name}`}
+                aria-current={isActive || undefined}
               >
                 {art ? (
                   <img src={art} alt="" className="spotify-track-art" loading="lazy" />
@@ -284,7 +308,8 @@ export default function SpotifyPanel() {
               </button>
             )
           })}
-        </div>
+          </div>
+        </>
       )}
 
       {showEmptyState ? (
@@ -301,7 +326,9 @@ export default function SpotifyPanel() {
         </div>
       ) : (
         tracks.length > 0 && (
-          <div className="spotify-track-list" aria-busy={loading}>
+          <>
+            {showLabels && <div className="spotify-list-label">{playlistLabel}</div>}
+            <div className="spotify-track-list" aria-busy={loading}>
             {tracks.map((t, i) => {
               const isActive = i === index
               const art = artFor(t)
@@ -334,7 +361,8 @@ export default function SpotifyPanel() {
                 </button>
               )
             })}
-          </div>
+            </div>
+          </>
         )
       )}
     </div>

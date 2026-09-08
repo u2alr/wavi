@@ -73,14 +73,14 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Depth vignette so the glass window pops against the aurora */
+/* Page backdrop stays clean — no vignette darkening the window edges */
 body::before {
   content: "";
   position: fixed;
   inset: 0;
   pointer-events: none;
   z-index: 0;
-  background: radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, 0.18) 100%);
+  background: none;
 }
 
 #root {
@@ -99,13 +99,7 @@ body::before {
   -webkit-backdrop-filter: saturate(2.4) blur(60px) brightness(1.08) contrast(1.05);
 
   border-radius: 12px;
-  box-shadow:
-    0 32px 90px rgba(0, 0, 0, 0.38),
-    0 2px 10px rgba(0, 0, 0, 0.16),
-    0 0 0 0.5px rgba(255, 255, 255, 0.25),
-    inset 0 1px 1px rgba(255, 255, 255, 0),
-    inset 1px 0 1px rgba(255, 255, 255, 0.25),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.3);
+  box-shadow: none;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -116,29 +110,8 @@ body::before {
   transition: width 0.3s cubic-bezier(0.2, 0.9, 0.3, 1), height 0.3s cubic-bezier(0.2, 0.9, 0.3, 1), transform 0.3s ease;
 }
 
-/* Specular glass sheen — diagonal light streak + top edge highlight */
-.xp-window::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: 50;
-  border-radius: inherit;
-}
-
-/* Soft inner vignette for depth + faint bottom glass reflection */
-.xp-window::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: 50;
-  border-radius: inherit;
-  background: linear-gradient(to top, rgba(255, 255, 255, 0.07) 0%, transparent 18%);
-  box-shadow:
-    inset 0 0 40px rgba(255, 255, 255, 0.1),
-    inset 0 0 1px rgba(255, 255, 255, 0.4);
-}
+/* Window glass pseudo-layers removed: no sheen, vignette, or reflection
+   may sit over the visualizer stage — presets render pure. */
 
 /* Fullscreen Mode */
 .xp-window.fullscreen {
@@ -150,14 +123,6 @@ body::before {
   border-radius: 0 !important;
   border: none !important;
   box-shadow: none !important;
-}
-
-/* No glass frame in fullscreen = no glass sheen either. The ::before/::after
-   top light + diagonal streak would otherwise wash a white band over the
-   top and left edges of the pure preset image. */
-.xp-window.fullscreen::before,
-.xp-window.fullscreen::after {
-  display: none;
 }
 
 /* Mini Player Mode */
@@ -538,18 +503,6 @@ body::before {
   margin: 0;
   font-size: 13px;
   color: rgba(255, 255, 255, 0.75);
-}
-
-/* Soft edge rolloff: shaders run hot to the edge-centers (their vignettes
-   only bite at corners), so this overlay gently lands all four edges for
-   every preset. Pure CSS — no GLSL touched. Sits under UI overlays. */
-.canvas-wrap::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: 2;
-  box-shadow: inset 0 0 120px rgba(2, 3, 8, 0.5);
 }
 
 /* ─── SIDEBAR / CONTROL PANEL — refined glass cards ─── */
@@ -2051,16 +2004,16 @@ select.xp-select:focus-visible, .xp-input:focus-visible,
   max-width: 26ch;
 }
 
-/* ─── AUDIO PLAYER BOX — Now Playing hero · dim opaque art bleed, flat matte ─── */
+/* ─── AUDIO PLAYER BOX — Now Playing hero · plain solid surface ─── */
 .audio-player-box {
   display: flex;
   flex-direction: column;
   gap: 12px;
   border: 1px solid var(--apb-edge, #c6ccd2);
   border-radius: 12px;
-  background: linear-gradient(135deg, color-mix(in srgb, var(--apb-g1, #c9ced4) 72%, black) 0%, color-mix(in srgb, var(--apb-g2, #dde1e5) 70%, black) 48%, color-mix(in srgb, var(--apb-g3, #aab1b9) 72%, black) 100%);
+  background: #fff;
   padding: 9px;
-  box-shadow: 0 6px 18px var(--apb-glow, rgba(0, 0, 0, 0.14));
+  box-shadow: none;
 }
 
 .apb-row {
@@ -2292,7 +2245,7 @@ select.xp-select:focus-visible, .xp-input:focus-visible,
   left: 12px;
   bottom: 12px;
   display: grid;
-  grid-template-columns: auto auto 0fr;
+  grid-template-columns: auto auto;
   align-items: center;
   gap: 10px;
   height: 50px;
@@ -2308,13 +2261,19 @@ select.xp-select:focus-visible, .xp-input:focus-visible,
   z-index: 25;
   overflow: hidden;
   will-change: grid-template-columns, padding;
-  transition: grid-template-columns 0.55s cubic-bezier(0.22, 1, 0.36, 1), padding 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: grid-template-columns 0.9s cubic-bezier(0.35, 0, 0.15, 1), padding 0.9s cubic-bezier(0.35, 0, 0.15, 1);
 }
 
-.fs-pill:hover,
-.fs-pill:focus-within {
-  grid-template-columns: auto auto 1fr;
-  padding-right: 8px;
+/* Middle column holds the transport: 0fr collapsed, 1fr on hover, so the
+   pill extends rightward and the eq rides to the end. */
+.fs-pill.has-transport {
+  grid-template-columns: auto 0fr auto;
+}
+
+.fs-pill.has-transport:hover,
+.fs-pill.has-transport:focus-within {
+  grid-template-columns: auto 1fr auto;
+  padding-right: 16px;
 }
 
 .fs-pill-art {
@@ -2393,25 +2352,21 @@ select.xp-select:focus-visible, .xp-input:focus-visible,
   50% { transform: scale(1.1); opacity: 0.7; }
 }
 
+/* Container only gates visibility (delayed on exit so the buttons can
+   float back up first); the falling animation lives on the buttons. */
 .fs-pill-transport {
   display: flex;
   align-items: center;
   min-width: 0;
   overflow: hidden;
-  opacity: 0;
-  transform: translateX(12px);
-  filter: blur(2px);
   visibility: hidden;
-  will-change: opacity, transform;
-  transition: opacity 0.55s cubic-bezier(0.22, 1, 0.36, 1), transform 0.55s cubic-bezier(0.22, 1, 0.36, 1), filter 0.55s cubic-bezier(0.22, 1, 0.36, 1), visibility 0.55s;
+  transition: visibility 0s linear 0.85s;
 }
 
 .fs-pill:hover .fs-pill-transport,
 .fs-pill:focus-within .fs-pill-transport {
-  opacity: 1;
-  transform: translateX(0);
-  filter: blur(0);
   visibility: visible;
+  transition-delay: 0s;
 }
 
 .fs-pill-transport-inner {
@@ -2421,8 +2376,8 @@ select.xp-select:focus-visible, .xp-input:focus-visible,
 }
 
 .fs-pill-transport button {
-  width: 36px;
-  height: 36px;
+  width: 30px;
+  height: 30px;
   border: none;
   border-radius: 50%;
   background: transparent;
@@ -2432,11 +2387,76 @@ select.xp-select:focus-visible, .xp-input:focus-visible,
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  opacity: 0;
+  transform: translateY(-16px);
+  filter: blur(2px);
+  will-change: opacity, transform, filter;
+  /* Teardrop fall: transform runs on a gravity ease-in (starts slow,
+     accelerates down); opacity/filter lag slightly so the silhouette
+     drops in first and materializes mid-fall. */
+  transition:
+    opacity 0.2s ease,
+    transform 0.3s cubic-bezier(0.55, 0.06, 0.68, 0.19),
+    filter 0.2s ease,
+    background 0.35s ease;
+}
+
+.fs-pill:hover .fs-pill-transport button,
+.fs-pill:focus-within .fs-pill-transport button {
+  opacity: 1;
+  transform: translateY(0);
+  filter: blur(0);
+}
+
+/* Staggered fall while the pill extends: prev → play → next, one by
+   one. Delay order per button is opacity, transform, filter,
+   background — the drop leads, the fade follows. */
+.fs-pill:hover .fs-pill-transport-inner button:nth-child(1),
+.fs-pill:focus-within .fs-pill-transport-inner button:nth-child(1) {
+  transition-delay: 0.14s, 0.07s, 0.14s, 0s;
+}
+
+.fs-pill:hover .fs-pill-transport-inner button:nth-child(2),
+.fs-pill:focus-within .fs-pill-transport-inner button:nth-child(2) {
+  transition-delay: 0.22s, 0.15s, 0.22s, 0s;
+}
+
+.fs-pill:hover .fs-pill-transport-inner button:nth-child(3),
+.fs-pill:focus-within .fs-pill-transport-inner button:nth-child(3) {
+  transition-delay: 0.3s, 0.23s, 0.3s, 0s;
 }
 
 .fs-pill-transport button:hover {
   background: rgba(255, 255, 255, 0.12);
 }
+
+/* Play/pause glyph drops in on every toggle (the key on .fs-pill-icon
+   remounts it, retriggering this). Same gravity ease as the buttons. */
+.fs-pill-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fs-pill-icon > svg {
+  animation: fs-icon-drop 0.2s cubic-bezier(0.55, 0.06, 0.68, 0.19);
+}
+
+@keyframes fs-icon-drop {
+  from {
+    transform: translateY(-10px);
+    opacity: 0;
+    filter: blur(2px);
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+
+/* The icon drop only ever plays right after the user's own click,
+   so it stays available under reduced-motion like the hover fall. */
 
 .fs-pill-transport button:focus-visible {
   outline: 2px solid #fff;
@@ -2444,10 +2464,9 @@ select.xp-select:focus-visible, .xp-input:focus-visible,
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .fs-pill,
-  .fs-pill-transport {
-    transition-duration: 0.01ms;
-  }
+  /* Hover/toggle feedback is user-summoned and bounded, so it stays —
+     only ambient, self-playing motion rests. (If everything snaps to
+     instant, the OS has "Animation effects" off, which reports reduce.) */
   .fs-pill-eq span {
     animation: none;
   }
@@ -3037,10 +3056,8 @@ select.xp-select:focus-visible, .xp-input:focus-visible,
 .control-panel {
   width: 350px;
   background: var(--panel-bg);
-  border-left: 1px solid rgba(255, 255, 255, 0.52);
-  box-shadow:
-    inset 1px 0 0 rgba(22, 25, 30, 0.08),
-    -18px 0 42px rgba(0, 0, 0, 0.1);
+  border-left: none;
+  box-shadow: none;
   color: var(--panel-ink);
 }
 
@@ -3376,7 +3393,8 @@ select.xp-select:focus-visible,
   padding: 5px;
   border-radius: 10px;
   border-color: var(--panel-line-strong);
-  background: rgba(255, 255, 255, 0.96);
+  /* Solid — a translucent popover turns ghostly over dark content. */
+  background: #fff;
   box-shadow: 0 16px 44px rgba(0, 0, 0, 0.18);
 }
 
@@ -3385,6 +3403,8 @@ select.xp-select:focus-visible,
   border-radius: 8px;
   padding: 6px 8px;
   font-size: 12.5px;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .panel-select-option:hover,
@@ -3441,6 +3461,8 @@ select.xp-select:focus-visible,
   gap: 7px;
   padding: 5px 7px 5px 5px;
   border-radius: 8px;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .spotify-track:hover {
@@ -3449,8 +3471,28 @@ select.xp-select:focus-visible,
 }
 
 .spotify-track.active {
-  background: rgba(138, 206, 0, 0.18) !important;
+  background: color-mix(in srgb, var(--wavi-accent) 16%, transparent);
+  border-color: color-mix(in srgb, var(--wavi-accent) 45%, transparent);
   box-shadow: inset 3px 0 0 var(--wavi-accent);
+}
+
+.spotify-track.active .spotify-track-title {
+  color: inherit;
+}
+
+/* Section labels separating search results from the playlist queue. */
+.spotify-list-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--xp-text-dim);
+  padding: 6px 8px 3px;
+}
+
+/* Theme-tinted text selection so selected rows never flash native blue. */
+.spotify-panel ::selection {
+  background: color-mix(in srgb, var(--wavi-accent) 32%, transparent);
 }
 
 .spotify-track-art {
@@ -3514,10 +3556,9 @@ select.xp-select:focus-visible,
   gap: 1px;
   padding: 10px;
   border-radius: 12px;
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--apb-g1, #c9ced4) 72%, black) 0%, color-mix(in srgb, var(--apb-g2, #dde1e5) 70%, black) 48%, color-mix(in srgb, var(--apb-g3, #aab1b9) 72%, black) 100%);
+  background: #fff;
   border: 1px solid var(--apb-edge, rgba(26, 36, 0, 0.25));
-  box-shadow: 0 6px 18px var(--apb-glow, rgba(0, 0, 0, 0.14));
+  box-shadow: none;
 }
 
 /* Adaptive ink + solid control surfaces — beats every translucent default. */
@@ -3930,16 +3971,8 @@ body {
 
 .xp-window {
   background: rgba(10, 10, 12, 0.78);
-  outline-color: rgba(255, 255, 255, 0.1);
-  box-shadow:
-    0 34px 88px rgba(0, 0, 0, 0.62),
-    0 0 0 1px rgba(255, 255, 255, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
-}
-
-.xp-window::before,
-.xp-window::after {
-  opacity: 0.28;
+  outline-color: transparent;
+  box-shadow: none;
 }
 
 .window-chrome,
@@ -4064,10 +4097,9 @@ select.xp-select,
 }
 
 .audio-player-box {
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--apb-g1, #3d4453) 68%, black) 0%, color-mix(in srgb, var(--apb-g2, #2b303c) 68%, black) 48%, color-mix(in srgb, var(--apb-g3, #17181d) 70%, black) 100%);
+  background: #151518;
   border: 1px solid var(--apb-edge, rgba(255, 255, 255, 0.14));
-  box-shadow: 0 6px 18px var(--apb-glow, rgba(0, 0, 0, 0.35));
+  box-shadow: none;
 }
 
 .audio-player-box .apb-title { color: var(--apb-ink, #f4f6f8); }
@@ -4344,14 +4376,14 @@ input[type="range"]::-moz-range-thumb {
   color: #0d1200;
   text-transform: lowercase;
   filter: blur(1.1px);
-  animation: brat-line-in 0.38s cubic-bezier(0.2, 0.7, 0.3, 1);
+  animation: brat-line-in 0.16s cubic-bezier(0.2, 0.6, 0.3, 1);
 }
 
 @keyframes brat-line-in {
   from {
     opacity: 0;
-    transform: translateY(12px);
-    filter: blur(8px);
+    transform: scale(0.86);
+    filter: blur(4px);
   }
 }
 
@@ -4364,13 +4396,13 @@ input[type="range"]::-moz-range-thumb {
   max-width: 70%;
   text-align: justify;
   text-align-last: justify;
-  animation: brat-next-in 0.3s ease-out;
+  animation: brat-next-in 0.14s cubic-bezier(0.2, 0.6, 0.3, 1);
 }
 
 @keyframes brat-next-in {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: scale(0.9);
   }
 }
 
@@ -4400,11 +4432,11 @@ input[type="range"]::-moz-range-thumb {
 .brat-overlay .brat2-w.now {
   visibility: visible;
   opacity: 1;
-  animation: brat2-pop 0.24s cubic-bezier(0.2, 0.9, 0.25, 1.2);
+  animation: brat2-pop 0.13s cubic-bezier(0.2, 0.6, 0.3, 1);
 }
 
 @keyframes brat2-pop {
-  from { transform: scale(0.55); }
+  from { transform: scale(0.6); }
   to { transform: scale(1); }
 }
 

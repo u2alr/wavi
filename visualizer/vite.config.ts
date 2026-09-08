@@ -11,7 +11,18 @@ export default defineConfig({
         target: 'https://spotify-canva.vercel.app',
         changeOrigin: true,
         secure: true,
-      }
-    }
-  }
+      },
+      // NetEase has no CORS headers — proxy via same origin in dev so the
+      // browser never touches music.163.com directly.
+      '/api/netease': {
+        target: 'https://music.163.com',
+        changeOrigin: true,
+        secure: true,
+        rewrite: (path) => path.replace(/^\/api\/netease/, '/api'),
+        headers: {
+          Referer: 'https://music.163.com/',
+        },
+      },
+    },
+  },
 })

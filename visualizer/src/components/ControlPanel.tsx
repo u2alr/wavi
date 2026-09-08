@@ -132,7 +132,7 @@ export default function ControlPanel({
               {currentPreset === 'brat' ? (
                 <>
                   <label className="brat-bg-toggle" htmlFor="brat-karaoke">
-                    <span className="brat-bg-label">Karaoke words<span className="panel-header-sub">(BETA)</span></span>
+                    <span className="brat-bg-label">Karaoke<span className="panel-header-sub">(BETA)</span></span>
                     <input
                       id="brat-karaoke"
                       type="checkbox"
@@ -142,7 +142,7 @@ export default function ControlPanel({
                     <span className="brat-switch" aria-hidden="true" />
                   </label>
                   <label className="brat-bg-toggle" htmlFor="brat-white-bg">
-                    <span className="brat-bg-label">White background</span>
+                    <span className="brat-bg-label">WhiteBG</span>
                     <input
                       id="brat-white-bg"
                       type="checkbox"

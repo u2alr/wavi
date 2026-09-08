@@ -227,16 +227,23 @@ const formatTime = (seconds: number) => {
 }
 
 // Slim seek bar — isolated so playback ticks never re-render the rest.
+// Dragging only previews (the fill follows the pointer); the real seek
+// commits once on release so the audio doesn't stutter back and forth
+// mid-drag and Spotify isn't spammed with a seek per mousemove.
 const BoxSeekBar = memo(function BoxSeekBar({
   currentTime,
   duration,
   displayRatio,
+  onPreviewRatio,
   onSeekRatio,
+  onCancelScrub,
 }: {
   currentTime: number
   duration: number
   displayRatio: number
+  onPreviewRatio: (ratio: number) => void
   onSeekRatio: (ratio: number) => void
+  onCancelScrub: () => void
 }) {
   const [isDragging, setIsDragging] = useState(false)
 
@@ -272,16 +279,25 @@ const BoxSeekBar = memo(function BoxSeekBar({
         const track = e.currentTarget
         const rect = track.getBoundingClientRect()
         const ratioAt = (x: number) => Math.max(0, Math.min(1, (x - rect.left) / rect.width))
-        onSeekRatio(ratioAt(e.clientX))
-        const onMove = (ev: PointerEvent) => onSeekRatio(ratioAt(ev.clientX))
+        onPreviewRatio(ratioAt(e.clientX))
+        const onMove = (ev: PointerEvent) => onPreviewRatio(ratioAt(ev.clientX))
         const onUp = (ev: PointerEvent) => {
           window.removeEventListener('pointermove', onMove)
           window.removeEventListener('pointerup', onUp)
+          window.removeEventListener('pointercancel', onCancel)
           setIsDragging(false)
           onSeekRatio(ratioAt(ev.clientX))
         }
+        const onCancel = () => {
+          window.removeEventListener('pointermove', onMove)
+          window.removeEventListener('pointerup', onUp)
+          window.removeEventListener('pointercancel', onCancel)
+          setIsDragging(false)
+          onCancelScrub()
+        }
         window.addEventListener('pointermove', onMove)
         window.addEventListener('pointerup', onUp)
+        window.addEventListener('pointercancel', onCancel)
       }}
       onKeyDown={onKeyDown}
     >
@@ -396,7 +412,15 @@ export default function AudioPlayerBox({
     }
   }, [volume, setVolume])
 
-  // Optimistic seek — the bar follows the pointer immediately.
+  // Drag preview — moves only the bar fill, never the audio.
+  const previewSeekRatio = useCallback((ratio: number) => {
+    setScrubRatio(Math.max(0, Math.min(1, ratio)))
+  }, [])
+
+  const cancelScrub = useCallback(() => setScrubRatio(null), [])
+
+  // Optimistic seek — commits the real position once (click, key step,
+  // or drag release). The bar follows the pointer immediately via preview.
   const commitSeekRatio = useCallback(
     (ratio: number) => {
       const clamped = Math.max(0, Math.min(1, ratio))
@@ -487,7 +511,9 @@ export default function AudioPlayerBox({
         currentTime={currentTime}
         duration={duration}
         displayRatio={displayRatio}
+        onPreviewRatio={previewSeekRatio}
         onSeekRatio={commitSeekRatio}
+        onCancelScrub={cancelScrub}
       />
 
       <div className="apb-controls">

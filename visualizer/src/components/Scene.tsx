@@ -967,164 +967,115 @@ function WaveformPreset() {
 }
 
 /**
- * AM Preset — Fractal Ember's time-domain waveform, but rendered as a calm,
- * flowing trace: heavy temporal smoothing (no per-frame "static"), a slow
- * attack/release amplitude envelope, and a soft white line with a hue-shift
- * bloom on a black background.
+ * AM Preset — an exact WaveformPreset copy (raw rolling time-domain trace,
+ * bass-reactive amplitude + thickness, crisp white stroke) with every magic
+ * number lifted into AM_TUNE so each behavior has a code control. Defaults
+ * reproduce WaveformPreset 1:1 (follow 1, mirror off, gain 1).
  */
+const AM_TUNE = {
+  follow: 2,         // refresh blend; 1 = raw sample, exactly like Waveform
+  ampQuiet: 0.01,    // amplitude floor at silence
+  ampEnergy: 0.55,   // amplitude added at full bass
+  thickMin: 0.002,   // stroke width at silence
+  thickEnergy: 0.002, // stroke width added at full bass
+  spacing: 0.001,    // derivative sampling step (thick-stroke consistency)
+  soft: 0.00008,       // smoothstep AA shoulder
+  gain: 1,           // master amplitude multiplier
+  mirror: true,     // true = symmetric mirror trace, false = Waveform look
+}
+
 function AMPreset() {
   const materialRef = useRef<THREE.ShaderMaterial>(null!)
   const viewport = useThree((state) => state.viewport)
+
   const { tex: waveTex, refresh } = useWaveTrace()
-  const env = useRef(0)
-  const glow = useMemo(() => new THREE.Color(), [])
 
   const shader = useMemo(() => ({
     uniforms: {
+      uTime: { value: 0 },
+      uBass: { value: 0 },
       uWave: { value: waveTex },
       uAspect: { value: 1 },
-      uAmp: { value: 0.62 },
-      uGlow: { value: glow },
-      uGlowAmt: { value: 0.1 },
+      uAmpQuiet: { value: AM_TUNE.ampQuiet },
+      uAmpEnergy: { value: AM_TUNE.ampEnergy },
+      uGain: { value: AM_TUNE.gain },
+      uThickMin: { value: AM_TUNE.thickMin },
+      uThickEnergy: { value: AM_TUNE.thickEnergy },
+      uSpacing: { value: AM_TUNE.spacing },
+      uSoft: { value: AM_TUNE.soft },
+      uMirror: { value: AM_TUNE.mirror ? 1 : 0 },
     },
-
     vertexShader: `
       varying vec2 vUv;
-
       void main() {
         vUv = uv;
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
       }
     `,
-
     fragmentShader: `
       varying vec2 vUv;
-
-      uniform sampler2D uWave;
-      uniform float uAspect;
-      uniform float uAmp;
-      uniform float uGlowAmt;
-      uniform vec3 uGlow;
-
-      float sampleSmooth(float x) {
-        x = clamp(x, 0.0, 1.0);
-
-        float s = 0.0;
-      
-        s += texture2D(uWave, vec2(x - 0.050, 0.5)).r * 0.025;
-        s += texture2D(uWave, vec2(x - 0.040, 0.5)).r * 0.040;
-        s += texture2D(uWave, vec2(x - 0.030, 0.5)).r * 0.065;
-        s += texture2D(uWave, vec2(x - 0.020, 0.5)).r * 0.095;
-        s += texture2D(uWave, vec2(x - 0.012, 0.5)).r * 0.120;
-        s += texture2D(uWave, vec2(x - 0.006, 0.5)).r * 0.135;
-        s += texture2D(uWave, vec2(x,        0.5)).r * 0.140;
-        s += texture2D(uWave, vec2(x + 0.006, 0.5)).r * 0.135;
-        s += texture2D(uWave, vec2(x + 0.012, 0.5)).r * 0.120;
-        s += texture2D(uWave, vec2(x + 0.020, 0.5)).r * 0.095;
-        s += texture2D(uWave, vec2(x + 0.030, 0.5)).r * 0.065;
-        s += texture2D(uWave, vec2(x + 0.040, 0.5)).r * 0.040;
-        s += texture2D(uWave, vec2(x + 0.050, 0.5)).r * 0.025;
-
-        return s;
-      }
+      uniform float uTime, uBass, uAspect;
+      uniform float uAmpQuiet, uAmpEnergy, uGain;
+      uniform float uThickMin, uThickEnergy;
+      uniform float uSpacing, uSoft;
+      uniform float uMirror;
+      uniform sampler2D uWave;   // 0..1, 0.5 = silence
 
       void main() {
         vec2 p = (vUv - 0.5) * 2.0;
         p.x *= uAspect;
 
-        float mirrorX = abs(vUv.x - 0.5) * 2.0;
-        float s = sampleSmooth(mirrorX);
+        float amp = (uAmpQuiet + uBass * uAmpEnergy) * uGain;
 
-        float mirrorXLeft = abs((vUv.x - 0.018) - 0.5) * 2.0;
-        float mirrorXRight = abs((vUv.x + 0.018) - 0.5) * 2.0;
-        
-        float sL = sampleSmooth(mirrorXLeft);
-        float sR = sampleSmooth(mirrorXRight);
+        // Plot real audio: x position -> sample in the rolling window
+        float t = vUv.x;
+        if (uMirror > 0.5) {
+          t = abs(vUv.x - 0.5) * 2.0;
+        }
+        float s  = texture2D(uWave, vec2(t, 0.5)).r;
+        float sL = texture2D(uWave, vec2(t - uSpacing, 0.5)).r;
+        float sR = texture2D(uWave, vec2(t + uSpacing, 0.5)).r;
 
-        float y = (s - 0.5) * 2.0 * uAmp;
+        float y = (s - 0.5) * 2.0 * amp;
 
-        float dsdt = (sR - sL) / 0.036;
-        float dydx = uAmp * dsdt / uAspect;
-
+        // Keep the perpendicular-distance trick (still needed for thick
+        // consistent strokes on steep transients like kick drums)
+        float dsdt = (sR - sL) / (2.0 * uSpacing);
+        float dydx = amp * dsdt / uAspect;
         float dist = abs(p.y - y) / sqrt(1.0 + dydx * dydx);
 
-        // ── SILKY SMOOTH ANTI-ALIASING ───
-        float aa = fwidth(dist) * 1.5; // Boost anti-aliasing
+        float thickness = uThickMin + uBass * uThickEnergy;
+        float line = 1.0 - smoothstep(thickness - uSoft, thickness, dist);
 
-        // Wide smoothstep range for buttery soft edges
-        float core = 1.0 - smoothstep(
-          0.002 - aa,  // Inner edge (very thin core)
-          0.008 + aa,  // Outer edge (soft fade)
-          dist
-        );
-
-        // Extra soft bloom for that silky feel
-        float bloom = exp(-dist * dist * 350.0);
-        float softGlow = exp(-dist * dist * 80.0);
-
-        vec3 col = vec3(0.0);
-
-        // Layer the glow for smoothness
-        col += uGlow * bloom * uGlowAmt * 0.60;
-        col += uGlow * softGlow * uGlowAmt * 0.25;
-        col += vec3(1.0) * core * (0.85 + uGlowAmt * 0.15);
-
-        gl_FragColor = vec4(col, 1.0);
+        gl_FragColor = vec4(vec3(line), 1.0);
       }
     `,
-  }), [waveTex, glow])
+  }), [waveTex])
 
-  useFrame((_state, delta) => {
-    const {
-      sensitivity,
-      hueShift,
-      intensity
-    } = useStore.getState().params
+  useFrame((state) => {
+    const { sensitivity, speed } = useStore.getState().params
+    const b = readBands(getFreqData()) // shared bass/mid/treble bands, unchanged
 
-    const b = readBands(getFreqData())
-    const dt = Math.min(delta, 0.05)
-
-    refresh(0.055)
-
-    const target = Math.min(
-      (
-        b.bass * 0.45 +
-        b.mid * 0.65 +
-        b.treble * 0.10
-      ) * sensitivity,
-      1
-    )
-
-    const attack = 1 - Math.exp(-dt * 1.25)
-    const release = 1 - Math.exp(-dt * 0.65)
-
-    const k = target > env.current ? attack : release
-
-    env.current += (target - env.current) * k
+    refresh(AM_TUNE.follow) // raw time-domain trace → texture
 
     const u = materialRef.current.uniforms
-
-    u.uAmp.value = 0.58 + env.current * 0.48
+    u.uTime.value = state.clock.elapsedTime * speed
+    u.uBass.value = Math.min(b.bass * sensitivity, 1.0)
     u.uAspect.value = viewport.width / viewport.height
-
-    glow.setHSL(
-      (hueShift % 360) / 360,
-      0.85,
-      0.6
-    )
-
-    u.uGlowAmt.value = Math.min(intensity * 0.2, 1.2)
+    u.uAmpQuiet.value = AM_TUNE.ampQuiet
+    u.uAmpEnergy.value = AM_TUNE.ampEnergy
+    u.uGain.value = AM_TUNE.gain
+    u.uThickMin.value = AM_TUNE.thickMin
+    u.uThickEnergy.value = AM_TUNE.thickEnergy
+    u.uSpacing.value = AM_TUNE.spacing
+    u.uSoft.value = AM_TUNE.soft
+    u.uMirror.value = AM_TUNE.mirror ? 1 : 0
   })
 
   return (
     <mesh>
       <planeGeometry args={[viewport.width, viewport.height]} />
-      <shaderMaterial
-        ref={materialRef}
-        {...shader}
-        transparent
-        depthWrite={false}
-      />
+      <shaderMaterial ref={materialRef} {...shader} />
     </mesh>
   )
 }

@@ -140,7 +140,7 @@ export default function FullscreenPill({
 
   return (
     <div
-      className={`fs-pill ${driveReactive ? 'playing' : 'paused'}`}
+      className={`fs-pill ${driveReactive ? 'playing' : 'paused'}${hasTransport ? ' has-transport' : ''}`}
       role="region"
       aria-label={`Now Playing: ${displayName}`}
       title={displayName}
@@ -157,17 +157,6 @@ export default function FullscreenPill({
             </svg>
           </span>
         )}
-      </div>
-
-      <div className="fs-pill-eq" aria-hidden="true">
-        {Array.from({ length: DOT_COUNT }).map((_, i) => (
-          <span
-            key={i}
-            ref={(el) => {
-              barRefs.current[i] = el
-            }}
-          />
-        ))}
       </div>
 
       {hasTransport && (
@@ -187,6 +176,9 @@ export default function FullscreenPill({
           title={isPlaying ? 'Pause' : 'Play'}
           aria-label={isPlaying ? 'Pause' : 'Play'}
         >
+          {/* key remounts the icon on toggle so it drops in like a teardrop
+              instead of popping between play/pause glyphs */}
+          <span key={isPlaying ? 'pause' : 'play'} className="fs-pill-icon">
           {isPlaying ? (
             <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
               <rect x="5" y="4" width="4" height="16" />
@@ -197,6 +189,7 @@ export default function FullscreenPill({
               <polygon points="6 4 20 12 6 20 6 4" />
             </svg>
           )}
+          </span>
         </button>
         <button type="button" onClick={onNext} title="Next Track" aria-label="Next Track">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
@@ -207,6 +200,17 @@ export default function FullscreenPill({
         </div>
       </div>
       )}
+
+      <div className="fs-pill-eq" aria-hidden="true">
+        {Array.from({ length: DOT_COUNT }).map((_, i) => (
+          <span
+            key={i}
+            ref={(el) => {
+              barRefs.current[i] = el
+            }}
+          />
+        ))}
+      </div>
     </div>
   )
 }

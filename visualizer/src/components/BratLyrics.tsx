@@ -82,9 +82,33 @@ export default function BratLyrics({
   const trackTitle = track?.name ?? ''
   const trackArtist = track?.artists?.[0]?.name
 
+  // Song identity for transition resets — the fetch below resolves
+  // asynchronously, so without a synchronous blank the old song's lines
+  // stay mounted and the RAF loop matches the new song's position against
+  // them (stale lyrics popping up over the next song).
+  const songKey = trackId ?? `local:${trackName}`
+  const lastSongKeyRef = useRef<string | null>(null)
+  // Position the store held at the song change — it belongs to the OLD
+  // song until the SDK emits a fresh one for the new song. While set, the
+  // snap effects below must not touch the clock (otherwise a seek-then-skip
+  // flashes the next song's lyrics at the old seek time, then snaps back).
+  const stalePosRef = useRef<number | null>(null)
+
   // Fetch lyrics on track change — use AbortController to cancel stale requests
   useEffect(() => {
     const controller = new AbortController()
+    // New song → blank immediately (no stale-line flash) and rewind the
+    // shared clock, so the first RAF tick can't place the new song inside
+    // the old lyrics' time range. Same-song refires skip this and keep
+    // whatever is on screen.
+    if (lastSongKeyRef.current !== songKey) {
+      lastSongKeyRef.current = songKey
+      setLines([])
+      setKey(-1)
+      clock.current = 0
+      stalePosRef.current = useStore.getState().playbackPosition
+    }
+
     const meta = trackId
       ? { title: trackTitle, artist: trackArtist, id: trackId }
       : guessFromName(trackName)
@@ -103,7 +127,7 @@ export default function BratLyrics({
     }).catch(() => { /* aborted */ })
 
     return () => controller.abort()
-  }, [trackId, trackName, trackTitle, trackArtist])
+  }, [trackId, trackName, trackTitle, trackArtist, songKey, clock])
 
   // Sync snap (Spotify only — local files read audio.currentTime live
   // every frame, so seeks already follow). Snaps the private clock to the
@@ -115,6 +139,13 @@ export default function BratLyrics({
   // Silent by design.
   useEffect(() => {
     if (!trackId || !playing) return
+    // The store position is the old song's until the SDK reports the new
+    // song — snapping to it is what flashed next-song lyrics at the old
+    // seek time. Wait for a position we haven't seen before.
+    if (stalePosRef.current !== null) {
+      if (playbackPosition === stalePosRef.current) return
+      stalePosRef.current = null
+    }
     const threshold = lyricSynced ? LYRIC_SYNC_THRESHOLD_MS : LYRIC_SYNC_THRESHOLD_MS * 3
     if (Math.abs(clock.current - playbackPosition) > threshold) {
       clock.resync(playbackPosition)
@@ -129,6 +160,12 @@ export default function BratLyrics({
     prevPlayingRef.current = playing
     if (!resumed || !trackId) return
     const sdkPos = useStore.getState().playbackPosition
+    // Same quarantine as the snap above — a resume coinciding with a track
+    // change must not inject the old song's leftover position.
+    if (stalePosRef.current !== null) {
+      if (sdkPos === stalePosRef.current) return
+      stalePosRef.current = null
+    }
     const threshold = lyricSyncedRef.current ? LYRIC_SYNC_THRESHOLD_MS : LYRIC_SYNC_THRESHOLD_MS * 3
     if (Math.abs(clock.current - sdkPos) > threshold) {
       clock.resync(sdkPos)
