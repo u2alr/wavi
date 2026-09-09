@@ -1,11 +1,12 @@
 import { useMemo, useRef, useEffect, useState, useCallback } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
-import { useStore } from '../store'
+import { useStore, presetParamsFor } from '../store'
 import { getFreqData } from '../audio'
 import { getSampleRate } from '../audio'
 import { getExtensionWaveData } from '../audio'
 import { getEmberWaveAnalyser, teardownEmberWaveAnalyser } from '../emberAnalyser'
+import { useArtGradient } from '../useArtGradient'
 
 
 const edgeCache = new Map<string, number[]>()
@@ -153,7 +154,7 @@ function Mellow2Preset() {
 
   useFrame((state) => {
     const b = readBands(getFreqData(), bandsScratch)
-    const { sensitivity, hueShift, intensity, speed, complexity } = useStore.getState().params
+    const { sensitivity, hueShift, intensity, speed, complexity } = presetParamsFor(useStore.getState())
     const u = materialRef.current.uniforms
     u.uTime.value = state.clock.elapsedTime * speed
     u.uBass.value = b.bass
@@ -296,7 +297,7 @@ function AuroraSilkPreset() {
   useFrame((state, delta) => {
     const dt = Math.min(delta, 0.05)
     const b = readBands(getFreqData(), bandsScratch)
-    const { sensitivity, hueShift, intensity, speed, complexity } = useStore.getState().params
+    const { sensitivity, hueShift, intensity, speed, complexity } = presetParamsFor(useStore.getState())
     const u = materialRef.current.uniforms
     u.uTime.value = state.clock.elapsedTime * speed
     u.uHueShift.value = hueShift
@@ -428,7 +429,7 @@ function Mellow1Preset() {
 
   useFrame((state) => {
     const b = readBands(getFreqData(), bandsScratch)
-    const { sensitivity, hueShift, intensity, speed, complexity } = useStore.getState().params
+    const { sensitivity, hueShift, intensity, speed, complexity } = presetParamsFor(useStore.getState())
     const u = materialRef.current.uniforms
     u.uTime.value = state.clock.elapsedTime * speed
     u.uBass.value = b.bass
@@ -546,7 +547,7 @@ function PrismaticTempestPreset() {
   useFrame((state, delta) => {
     const dt = Math.min(delta, 0.05)
     const bands = readBands7(getFreqData(), rawBands)
-    const { sensitivity, hueShift, intensity, speed, complexity } = useStore.getState().params
+    const { sensitivity, hueShift, intensity, speed, complexity } = presetParamsFor(useStore.getState())
     const u = materialRef.current.uniforms
     u.uTime.value = state.clock.elapsedTime * speed
     u.uSensitivity.value = sensitivity
@@ -671,7 +672,7 @@ function AcidWashPreset() {
   useFrame((state, delta) => {
     const dt = Math.min(delta, 0.05)
     const bands = readBands7(getFreqData(), rawBands)
-    const { sensitivity, hueShift, intensity, speed, complexity } = useStore.getState().params
+    const { sensitivity, hueShift, intensity, speed, complexity } = presetParamsFor(useStore.getState())
     const u = materialRef.current.uniforms
     u.uTime.value = state.clock.elapsedTime * speed
     u.uSensitivity.value = sensitivity
@@ -813,7 +814,7 @@ function ChromaticBurstPreset() {
   useFrame((state, delta) => {
     const dt = Math.min(delta, 0.05)
     const bands = readBands7(getFreqData(), rawBands)
-    const { sensitivity, hueShift, intensity, speed } = useStore.getState().params
+    const { sensitivity, hueShift, intensity, speed } = presetParamsFor(useStore.getState())
     const u = materialRef.current.uniforms
     u.uTime.value = state.clock.elapsedTime * speed
     u.uSensitivity.value = sensitivity
@@ -947,7 +948,7 @@ function WaveformPreset() {
   }), [waveTex])
 
   useFrame((state) => {
-    const { sensitivity, speed } = useStore.getState().params
+    const { sensitivity, speed } = presetParamsFor(useStore.getState())
     const b = readBands(getFreqData()) // shared bass/mid/treble bands, unchanged
 
     refresh(1) // raw time-domain trace → texture
@@ -1057,7 +1058,7 @@ function AMPreset() {
   }), [waveTex])
 
   useFrame((state) => {
-    const { sensitivity, speed } = useStore.getState().params
+    const { sensitivity, speed } = presetParamsFor(useStore.getState())
     const b = readBands(getFreqData()) // shared bass/mid/treble bands, unchanged
 
     refresh(AM_TUNE.follow) // raw time-domain trace → texture
@@ -1106,6 +1107,9 @@ function AM2Preset() {
 
       uThickMin: { value: AM_TUNE.thickMin },
       uThickEnergy: { value: AM_TUNE.thickEnergy },
+      uBassGate: { value: 1 },
+      uMidGate: { value: 1 },
+      uTrebleGate: { value: 1 },
       uSpacing: { value: AM_TUNE.spacing },
       uSoft: { value: AM_TUNE.soft },
 
@@ -1137,6 +1141,9 @@ function AM2Preset() {
 
       uniform float uThickMin;
       uniform float uThickEnergy;
+      uniform float uBassGate;
+      uniform float uMidGate;
+      uniform float uTrebleGate;
       uniform float uSpacing;
       uniform float uSoft;
 
@@ -1181,12 +1188,12 @@ function AM2Preset() {
         float bassAmp =
           (uAmpQuiet + uBass * uAmpEnergy)
           * uGain
-          * 0.45;
+          * 0.25;
 
         float midAmp =
           (uAmpQuiet + uMid * uAmpEnergy)
           * uGain
-          * 0.35;
+          * 0.75;
 
         float trebleAmp =
           (uAmpQuiet + uTreble * uAmpEnergy)
@@ -1194,9 +1201,9 @@ function AM2Preset() {
           * 0.25;
 
         // Three horizontal divider positions.
-        float bassY = 0.505;
+        float bassY = 0.50;
         float midY = 0.50;
-        float trebleY = 0.495;
+        float trebleY = 0.50;
 
         // Slightly different thickness per band.
         float bassThickness =
@@ -1213,21 +1220,21 @@ function AM2Preset() {
           0.0,
           bassAmp,
           bassThickness
-        );
+        ) * uBassGate;
 
         float mid = drawWave(
           midY,
           0.0,
           midAmp,
           midThickness
-        );
+        ) * uMidGate;
 
         float treble = drawWave(
           trebleY,
           0.0,
           trebleAmp,
           trebleThickness
-        );
+        ) * uTrebleGate;
 
         float line = max(bass, max(mid, treble));
 
@@ -1244,7 +1251,7 @@ function AM2Preset() {
   }), [waveTex])
 
   useFrame((state) => {
-    const { sensitivity, speed } = useStore.getState().params
+    const { sensitivity, speed, bassAmp, midAmp, trebleAmp } = presetParamsFor(useStore.getState())
     const b = readBands(getFreqData())
 
     refresh(AM_TUNE.follow)
@@ -1254,13 +1261,23 @@ function AM2Preset() {
     u.uTime.value = state.clock.elapsedTime * speed
 
     u.uBass.value =
-      Math.min(b.bass * sensitivity, 1.0)
+      Math.min(b.bass * sensitivity * bassAmp, 1.0)
 
     u.uMid.value =
-      Math.min(b.mid * sensitivity, 1.0)
+      Math.min(b.mid * sensitivity * midAmp, 1.0)
 
     u.uTreble.value =
-      Math.min(b.treble * sensitivity, 1.0)
+      Math.min(b.treble * sensitivity * trebleAmp, 1.0)
+
+    // Amp at 0 = band gone entirely (kills the quiet-floor remnant too).
+    u.uBassGate.value =
+      bassAmp > 0 ? 1 : 0
+
+    u.uMidGate.value =
+      midAmp > 0 ? 1 : 0
+
+    u.uTrebleGate.value =
+      trebleAmp > 0 ? 1 : 0
 
     u.uAspect.value =
       viewport.width / viewport.height
@@ -1462,11 +1479,195 @@ function CanvasAmbientPreset() {
 
   useFrame((state) => {
     const b = readBands(getFreqData(), bandsScratch)
-    const { sensitivity, speed } = useStore.getState().params
+    const { sensitivity, speed } = presetParamsFor(useStore.getState())
     const u = materialRef.current.uniforms
     u.uTime.value = state.clock.elapsedTime * speed
     u.uBass.value = Math.min(b.bass * sensitivity, 1.5)
     u.uAspect.value = viewport.width / viewport.height
+  })
+
+  return <mesh><planeGeometry args={[viewport.width, viewport.height]} /><shaderMaterial ref={materialRef} {...shader} /></mesh>
+}
+const hexToRgb01 = (hex: string): [number, number, number] => {
+  const n = parseInt(hex.slice(1), 16)
+  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255]
+}
+
+// Fallback palette when no cover is sampled (warm brown, like v1).
+const FALLBACK_PALETTE: [number, number, number][] = [
+  [0.30, 0.19, 0.11],
+  [0.20, 0.12, 0.07],
+  [0.11, 0.07, 0.05],
+]
+
+/**
+ * Canvas Ambient 2 — calm Apple Music-style gradient. Artwork card shows
+ * the album cover directly (no canvas video); the background is a slow
+ * self-flowing domain-warped noise tinted by the sampled cover palette
+ * (useArtGradient). No audio reactivity by design — palette lerps toward
+ * each new cover (~1.5s) so track changes crossfade instead of cutting.
+ */
+function CanvasAmbient2Preset() {
+  const materialRef = useRef<THREE.ShaderMaterial>(null!)
+  const viewport = useThree((s) => s.viewport)
+  const track = useStore((s) => s.spotifyCurrentTrack)
+  const coverUrl = track?.album?.images?.[0]?.url
+  const artGradient = useArtGradient(coverUrl)
+  // Cover texture loaded directly (v1 keeps using useCanvasSource).
+  const [art, setArt] = useState<{ tex: THREE.Texture | null; aspect: number }>({ tex: null, aspect: 1 })
+  useEffect(() => {
+    let dead = false
+    let loaded: THREE.Texture | null = null
+    if (!coverUrl) {
+      setArt({ tex: null, aspect: 1 })
+      return
+    }
+    new THREE.TextureLoader().load(coverUrl, (t) => {
+      if (dead) {
+        t.dispose()
+        return
+      }
+      t.colorSpace = THREE.SRGBColorSpace
+      const img = t.image as HTMLImageElement | undefined
+      loaded = t
+      setArt({ tex: t, aspect: img?.width && img?.height ? img.width / img.height : 1 })
+    })
+    return () => {
+      dead = true
+      loaded?.dispose()
+    }
+  }, [coverUrl])
+  // Displayed palette — lerped toward the sampled target every frame.
+  const paletteRef = useRef<[number, number, number][]>(FALLBACK_PALETTE.map((c) => [...c] as [number, number, number]))
+
+  const shader = useMemo(() => ({
+    uniforms: {
+      uTime: { value: 0 }, uAspect: { value: 1 },
+      uTex: { value: null as THREE.Texture | null }, uHasTex: { value: 0 },
+      uArtAspect: { value: 1 },
+      uArtSize: { value: 0.58 },
+      uArtX: { value: -0.88 },       // left half — lyrics live on the right
+      uArtY: { value: 0.0 },
+      uRadius: { value: 0.02 },
+      uShadow: { value: 0.15 },
+      uArtDim: { value: 3.0 },
+      uArtSaturation: { value: 0.75 },
+      uArtContrast: { value: 0.9 },
+      uPalA: { value: new THREE.Vector3(...FALLBACK_PALETTE[0]) },
+      uPalB: { value: new THREE.Vector3(...FALLBACK_PALETTE[1]) },
+      uPalC: { value: new THREE.Vector3(...FALLBACK_PALETTE[2]) },
+    },
+    vertexShader: 'varying vec2 vUv; void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
+    fragmentShader: `
+      varying vec2 vUv;
+      uniform float uTime,uAspect,uHasTex,uArtAspect,uArtSize,uArtX,uArtY,uRadius,uShadow;
+      uniform float uArtDim,uArtSaturation,uArtContrast;
+      uniform vec3 uPalA,uPalB,uPalC;
+      uniform sampler2D uTex;
+
+      float rbox(vec2 p, vec2 b, float r){
+        vec2 q=abs(p)-b+r;
+        return length(max(q,0.0))+min(max(q.x,q.y),0.0)-r;
+      }
+
+      vec3 adjustSaturation(vec3 col, float sat) {
+        float gray = dot(col, vec3(0.299, 0.587, 0.114));
+        return mix(vec3(gray), col, sat);
+      }
+
+      float hash21(vec2 p){
+        p=fract(p*vec2(234.34,435.345));
+        p+=dot(p,p+34.23);
+        return fract(p.x*p.y);
+      }
+
+      float vnoise(vec2 p){
+        vec2 i=floor(p), f=fract(p);
+        vec2 u=f*f*(3.0-2.0*f);
+        float a=hash21(i), b=hash21(i+vec2(1.0,0.0));
+        float c=hash21(i+vec2(0.0,1.0)), d=hash21(i+vec2(1.0,1.0));
+        return mix(mix(a,b,u.x),mix(c,d,u.x),u.y);
+      }
+
+      float fbm(vec2 p){
+        float v=0.0, a=0.5;
+        for(int i=0;i<7;i++){ v+=a*vnoise(p); p*=2.03; a*=0.5; }
+        return v;
+      }
+
+      void main(){
+        vec2 p=(vUv-0.5)*2.0; p.x*=uAspect;
+
+        // Calm ambient background — domain-warped fbm drifting on its
+        // own clock. Palette comes from the cover, nothing from audio.
+        float t=uTime*0.06;
+        vec2 q=p*1.4;
+        vec2 warp=vec2(fbm(q+vec2(t*0.4,t*0.2)), fbm(q+vec2(-t*0.3,t*0.5)));
+        float n=fbm(q*1.6+warp*0.9+vec2(t*0.25,-t*0.15));
+        vec3 bg=mix(uPalA,uPalB,smoothstep(0.25,0.78,n));
+        bg=mix(bg,uPalC,smoothstep(0.5,0.95,n)*0.4);
+        float vig=1.0-smoothstep(0.4,2.6,length(p))*0.5;
+        bg*=vig;
+
+        // artwork card (same treatment as v1). Split layout on wide
+        // canvases: card on the left, lyrics DOM on the right. Narrow
+        // (portrait) canvases stack: card centered above bottom lyrics.
+        float H=uArtSize;
+        float W=H*uArtAspect;
+        float split=step(1.0,uAspect);
+        vec2 cardC=mix(vec2(0.0,0.42),vec2(uArtX,uArtY),split);
+        vec2 aq=(p-cardC);
+
+        float d=rbox(aq, vec2(W,H), uRadius);
+        float mask=(1.0-smoothstep(-0.008,0.008,d))*uHasTex;
+        vec2 uvArt=clamp(aq/(2.0*vec2(W,H))+0.5, 0.0, 1.0);
+
+        vec3 art=uHasTex>0.5 ? texture2D(uTex,uvArt).rgb : vec3(0.0);
+        art *= uArtDim;
+        art = adjustSaturation(art, uArtSaturation);
+        art = (art - 0.5) * uArtContrast + 0.5;
+        float artVig = 0.8 - smoothstep(0.6, 1.0, length(uvArt - 0.5) * 1.8);
+        art *= mix(0.7, 1.0, artVig);
+
+        float shadow=exp(-max(d,0.0)*6.0)*uShadow;
+
+        vec3 col=bg*(1.0-shadow);
+        col=mix(col,art,mask);
+
+        col=col/(1.0+col*0.6);
+        gl_FragColor=vec4(col,1.0);
+      }
+    `,
+  }), [])
+
+  useEffect(() => {
+    const u = materialRef.current.uniforms
+    u.uTex.value = art.tex
+    u.uHasTex.value = art.tex ? 1 : 0
+    u.uArtAspect.value = art.aspect
+  }, [art])
+
+  const targetPalette = useMemo<[number, number, number][]>(
+    () =>
+      artGradient
+        ? [hexToRgb01(artGradient.g1), hexToRgb01(artGradient.g2), hexToRgb01(artGradient.g3)]
+        : FALLBACK_PALETTE,
+    [artGradient],
+  )
+
+  useFrame((state, delta) => {
+    const { speed } = presetParamsFor(useStore.getState())
+    const u = materialRef.current.uniforms
+    u.uTime.value = state.clock.elapsedTime * speed
+    u.uAspect.value = viewport.width / viewport.height
+    // Exponential ease toward the sampled palette — gentle crossfade.
+    const k = 1 - Math.exp(-Math.min(delta, 0.1) * 2.0)
+    const cur = paletteRef.current
+    const keys = ['uPalA', 'uPalB', 'uPalC'] as const
+    for (let i = 0; i < 3; i++) {
+      for (let c = 0; c < 3; c++) cur[i][c] += (targetPalette[i][c] - cur[i][c]) * k
+      ;(u[keys[i]].value as THREE.Vector3).set(cur[i][0], cur[i][1], cur[i][2])
+    }
   })
 
   return <mesh><planeGeometry args={[viewport.width, viewport.height]} /><shaderMaterial ref={materialRef} {...shader} /></mesh>
@@ -1485,6 +1686,8 @@ function ActivePreset() {
       return null
     case 'canvasAmbient':
       return <CanvasAmbientPreset />
+    case 'canvasAmbient2':
+      return <CanvasAmbient2Preset />
     case 'chromaticBurst':
       return <ChromaticBurstPreset />
     case 'mellow1':

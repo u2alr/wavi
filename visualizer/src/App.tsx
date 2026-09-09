@@ -26,8 +26,10 @@ import {
   setSpotifyStateListener,
   setSpotifyVolume,
 } from './spotifyPlayer'
+import { queueNext, queuePrev } from './spotifyQueue'
 import { exchangeCodeForToken, getSpotifyUser, loadTokens } from './spotify'
 import BratLyrics from './components/BratLyrics'
+import AmbientLyrics from './components/AmbientLyrics'
 import StatusBar from './components/StatusBar'
 import ExtensionBadge from './components/ExtensionBadge'
 import SavedLooksSection from './components/SavedLooksMenu'
@@ -64,6 +66,7 @@ export default function App() {
   const setMetrics = useStore((s) => s.setMetrics)
   const setVolume = useStore((s) => s.setVolume)
   const togglePanelCollapsed = useStore((s) => s.togglePanelCollapsed)
+  const setPanelCollapsed = useStore((s) => s.setPanelCollapsed)
   const setActiveModal = useStore((s) => s.setActiveModal)
 
   const [, setShowUI] = useState(true)
@@ -310,11 +313,26 @@ export default function App() {
   }, [currentTrackIndex, playlist.length, playTrack])
 
   const spotifyPrev = useCallback(() => {
-    previousSpotify().catch((err) => console.error('Spotify previous failed', err))
+    useStore.getState().setSpotifyError(null)
+    // Empty queue (e.g. external Spotify control) — fall back to the SDK.
+    if (useStore.getState().spotifyTracks.length === 0) {
+      previousSpotify().catch((err) => console.error('Spotify previous failed', err))
+      return
+    }
+    queuePrev().catch((err) =>
+      useStore.getState().setSpotifyError(err instanceof Error ? err.message : String(err)),
+    )
   }, [])
 
   const spotifyNext = useCallback(() => {
-    nextSpotify().catch((err) => console.error('Spotify next failed', err))
+    useStore.getState().setSpotifyError(null)
+    if (useStore.getState().spotifyTracks.length === 0) {
+      nextSpotify().catch((err) => console.error('Spotify next failed', err))
+      return
+    }
+    queueNext().catch((err) =>
+      useStore.getState().setSpotifyError(err instanceof Error ? err.message : String(err)),
+    )
   }, [])
 
   const toggleFS = useCallback(() => {
@@ -349,6 +367,24 @@ export default function App() {
     document.addEventListener('fullscreenchange', handler)
     return () => document.removeEventListener('fullscreenchange', handler)
   }, [setIsFullscreen])
+
+  // Fullscreen panel overlay: auto-collapse on enter (canvas stays full-bleed),
+  // restore prior state on exit. Toast hint shows once per session.
+  const preFsPanelRef = useRef<boolean | null>(null)
+  const fsToastShownRef = useRef(false)
+  useEffect(() => {
+    if (isFullscreen) {
+      preFsPanelRef.current = useStore.getState().isPanelCollapsed
+      setPanelCollapsed(true)
+      if (!fsToastShownRef.current) {
+        fsToastShownRef.current = true
+        showMenuToast('Fullscreen — press Tab for controls')
+      }
+    } else if (preFsPanelRef.current === false) {
+      setPanelCollapsed(false)
+      preFsPanelRef.current = null
+    }
+  }, [isFullscreen, setPanelCollapsed, showMenuToast])
 
   // Mouse activity timer for fullscreen HUD fade
   useEffect(() => {
@@ -718,6 +754,7 @@ export default function App() {
             active={currentPreset === 'brat'}
             variant={bratKaraoke ? 'karaoke' : 'line'}
           />
+          <AmbientLyrics active={currentPreset === 'canvasAmbient2'} />
 
           {/* Fullscreen pill — panel is hidden, so playback UI lives here.
               Always mounted in fullscreen: shows track transport when a track
@@ -731,8 +768,10 @@ export default function App() {
           )}
         </div>
 
-        {/* Collapsible Control Panel */}
-        {!isFullscreen && !isMiniPlayer && (
+        {/* Collapsible Control Panel — in fullscreen it floats above the
+            canvas (see .xp-window.fullscreen .control-panel) so the
+            visualizer keeps its full size. */}
+        {!isMiniPlayer && (
           <ControlPanel
             onPrev={spotifyCurrentTrack ? spotifyPrev : prev}
             onNext={spotifyCurrentTrack ? spotifyNext : next}

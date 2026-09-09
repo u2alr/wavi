@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useStore } from '../store'
+import { useStore, PRESET_PARAM_KEYS, presetParamsFor, type PresetParamKey } from '../store'
 import SpotifyAuth from './SpotifyAuth'
 import SpotifyPanel from './SpotifyPanel'
 import AudioPlayerBox from './AudioPlayerBox'
@@ -12,6 +12,35 @@ function Chevron() {
   )
 }
 
+interface SliderDef {
+  key: PresetParamKey
+  label: string
+  min: number
+  max: number
+  step: number
+  format: (v: number) => { text: string; valuText: string }
+}
+
+const oneDecimal = (v: number) => ({ text: v.toFixed(1), valuText: v.toFixed(1) })
+
+const SLIDERS: SliderDef[] = [
+  { key: 'intensity', label: 'Intensity', min: 0.5, max: 3, step: 0.1, format: oneDecimal },
+  { key: 'sensitivity', label: 'Sensitivity', min: 0.5, max: 5, step: 0.1, format: oneDecimal },
+  { key: 'bassAmp', label: 'Bass Amp', min: 0, max: 3, step: 0.1, format: oneDecimal },
+  { key: 'midAmp', label: 'Mid Amp', min: 0, max: 3, step: 0.1, format: oneDecimal },
+  { key: 'trebleAmp', label: 'Treble Amp', min: 0, max: 3, step: 0.1, format: oneDecimal },
+  {
+    key: 'hueShift',
+    label: 'Hue Shift',
+    min: 0,
+    max: 360,
+    step: 1,
+    format: (v) => ({ text: `${Math.round(v)}°`, valuText: `${Math.round(v)} degrees` }),
+  },
+  { key: 'speed', label: 'Speed', min: 0.1, max: 3, step: 0.1, format: oneDecimal },
+  { key: 'complexity', label: 'Complexity', min: 0.5, max: 3, step: 0.1, format: oneDecimal },
+]
+
 export default function ControlPanel({
   onPrev,
   onNext,
@@ -21,7 +50,8 @@ export default function ControlPanel({
 }) {
   // Granular Zustand selectors to prevent unnecessary re-renders
   const currentPreset = useStore((s) => s.currentPreset)
-  const params = useStore((s) => s.params)
+  const presetParams = useStore((s) => s.presetParams)
+  const params = { ...presetParamsFor({ currentPreset, presetParams }) }
   const isPanelCollapsed = useStore((s) => s.isPanelCollapsed)
   const isSpotifyAuthed = useStore((s) => s.isSpotifyAuthed)
   const bratWhiteBg = useStore((s) => s.bratWhiteBg)
@@ -131,96 +161,31 @@ export default function ControlPanel({
               ) : null}
 
               <div className="sliders-container">
-                <div className="ctrl-row">
-                  <div className="slider-label">
-                    <label htmlFor="param-intensity">Intensity</label>
-                  </div>
-                  <input
-                    id="param-intensity"
-                    type="range"
-                    min="0.5"
-                    max="3"
-                    step="0.1"
-                    value={params.intensity}
-                    aria-valuetext={params.intensity.toFixed(1)}
-                    style={{ ['--p' as string]: pct(params.intensity, 0.5, 3) }}
-                    onChange={(e) => setParam('intensity', +e.target.value)}
-                  />
-                  <span className="val">{params.intensity.toFixed(1)}</span>
-                </div>
-
-                <div className="ctrl-row">
-                  <div className="slider-label">
-                    <label htmlFor="param-sensitivity">Sensitivity</label>
-                  </div>
-                  <input
-                    id="param-sensitivity"
-                    type="range"
-                    min="0.5"
-                    max="5"
-                    step="0.1"
-                    value={params.sensitivity}
-                    aria-valuetext={params.sensitivity.toFixed(1)}
-                    style={{ ['--p' as string]: pct(params.sensitivity, 0.5, 5) }}
-                    onChange={(e) => setParam('sensitivity', +e.target.value)}
-                  />
-                  <span className="val">{params.sensitivity.toFixed(1)}</span>
-                </div>
-
-                <div className="ctrl-row">
-                  <div className="slider-label">
-                    <label htmlFor="param-hueshift">Hue Shift</label>
-                  </div>
-                  <input
-                    id="param-hueshift"
-                    type="range"
-                    min="0"
-                    max="360"
-                    step="1"
-                    value={params.hueShift}
-                    aria-valuetext={`${Math.round(params.hueShift)} degrees`}
-                    style={{ ['--p' as string]: pct(params.hueShift, 0, 360) }}
-                    onChange={(e) => setParam('hueShift', +e.target.value)}
-                  />
-                  <span className="val">{params.hueShift}°</span>
-                </div>
-
-                <div className="ctrl-row">
-                  <div className="slider-label">
-                    <label htmlFor="param-speed">Speed</label>
-                  </div>
-                  <input
-                    id="param-speed"
-                    type="range"
-                    min="0.1"
-                    max="3"
-                    step="0.1"
-                    value={params.speed}
-                    aria-valuetext={params.speed.toFixed(1)}
-                    style={{ ['--p' as string]: pct(params.speed, 0.1, 3) }}
-                    onChange={(e) => setParam('speed', +e.target.value)}
-                  />
-                  <span className="val">{params.speed.toFixed(1)}</span>
-                </div>
-
-                <div className="ctrl-row">
-                  <div className="slider-label">
-                    <label htmlFor="param-complexity">Complexity</label>
-                  </div>
-                  <input
-                    id="param-complexity"
-                    type="range"
-                    min="0.5"
-                    max="3"
-                    step="0.1"
-                    value={params.complexity}
-                    aria-valuetext={params.complexity.toFixed(1)}
-                    style={{ ['--p' as string]: pct(params.complexity, 0.5, 3) }}
-                    onChange={(e) => setParam('complexity', +e.target.value)}
-                  />
-                  <span className="val">{params.complexity.toFixed(1)}</span>
-                </div>
-
+                {SLIDERS.filter((s) => (PRESET_PARAM_KEYS[currentPreset] ?? []).includes(s.key)).map(
+                  (s) => {
+                    const v = params[s.key]
+                    const shown = s.format(v)
+                    return (
+                      <div className="ctrl-row" key={s.key}>
+                        <div className="slider-label">
+                          <label htmlFor={`param-${s.key}`}>{s.label}</label>
+                        </div>
+                        <input
+                          id={`param-${s.key}`}
+                          type="range"
+                          min={s.min}
+                          max={s.max}
+                          step={s.step}
+                          value={v}
+                          aria-valuetext={shown.valuText}
+                          style={{ ['--p' as string]: pct(v, s.min, s.max) }}
+                          onChange={(e) => setParam(s.key, +e.target.value)}
+                        />
+                        <span className="val">{shown.text}</span>
+                      </div>
+                    )
+                  },
+                )}
               </div>
 
               <div className="reset-row">

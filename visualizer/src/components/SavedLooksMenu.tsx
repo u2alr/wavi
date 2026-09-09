@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useStore } from '../store'
+import { useStore, presetParamsFor } from '../store'
 
 /**
  * Saved-looks bookmark section living inside the Presets menu dropdown.
@@ -16,7 +16,10 @@ export default function SavedLooksSection({
 }) {
   const savedPresets = useStore((s) => s.savedPresets)
   const currentPreset = useStore((s) => s.currentPreset)
-  const params = useStore((s) => s.params)
+  const presetParams = useStore((s) => s.presetParams)
+  // Merged inline (not as a selector): presetParamsFor builds a fresh
+  // object, which would loop getSnapshot forever as a store selector.
+  const params = { ...presetParamsFor({ currentPreset, presetParams }) }
   const savePreset = useStore((s) => s.savePreset)
   const loadPreset = useStore((s) => s.loadPreset)
   const deletePreset = useStore((s) => s.deletePreset)

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useStore } from '../store'
-import { getPlaylistTracks, getUserPlaylists, searchSpotifyTracks, SpotifyApiError } from '../spotify'
+import { getPlaylistTracks, getPlaylistTracksPage, getUserPlaylists, searchSpotifyTracks, SpotifyApiError } from '../spotify'
 
 /** Smallest album-art thumbnail (Spotify returns images largest-first). */
 function artFor(track: { album?: { images?: { url: string }[] } }): string | null {
@@ -28,10 +28,14 @@ export default function SpotifyPanel() {
   const setPlaying = useStore((s) => s.setSpotifyPlaying)
   const setCurrentTrack = useStore((s) => s.setSpotifyCurrentTrack)
   const setTrackName = useStore((s) => s.setTrackName)
+  const appendTracks = useStore((s) => s.appendSpotifyTracks)
+  const storeError = useStore((s) => s.spotifyError)
+  const setStoreError = useStore((s) => s.setSpotifyError)
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [selectedPlaylistId, setSelectedPlaylistId] = useState('')
+  const [playlistTotal, setPlaylistTotal] = useState(0)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<typeof tracks>([])
   const [pendingTrackId, setPendingTrack] = useState<string | null>(null)
@@ -51,10 +55,11 @@ export default function SpotifyPanel() {
     console.error(msg)
   }
 
-  const clearError = () => {
+  const clearError = useCallback(() => {
     setError('')
+    setStoreError(null)
     retryRef.current = null
-  }
+  }, [setStoreError])
 
   const loadPlaylists = useCallback(async () => {
     setLoading(true)
@@ -66,7 +71,7 @@ export default function SpotifyPanel() {
     } finally {
       setLoading(false)
     }
-  }, [setPlaylists])
+  }, [setPlaylists, clearError])
 
   useEffect(() => {
     if (isSpotifyAuthed && playlists.length === 0) {
@@ -79,8 +84,9 @@ export default function SpotifyPanel() {
     setLoading(true)
     clearError()
     try {
-      const list = await getPlaylistTracks(id)
+      const { tracks: list, total } = await getPlaylistTracks(id)
       setSelectedPlaylistId(id)
+      setPlaylistTotal(total)
       setTracks(list)
       setIndex(0)
       // Do NOT auto-play or set the current track — just load the tracks so
@@ -117,6 +123,24 @@ export default function SpotifyPanel() {
       setPendingTrack((cur) => (cur === list[i].id ? null : cur))
     }
   }
+
+  const prefetchingRef = useRef(false)
+
+  // Near the end of a truncated (>500) playlist, load the next page ahead
+  // so queue advance + metadata stay instant. Appends only — index preserved.
+  useEffect(() => {
+    if (!selectedPlaylistId || tracks.length === 0 || tracks.length >= playlistTotal) return
+    if (index < tracks.length - 5 || prefetchingRef.current) return
+    prefetchingRef.current = true
+    getPlaylistTracksPage(selectedPlaylistId, tracks.length)
+      .then((p) => {
+        if (p.tracks.length > 0) appendTracks(p.tracks)
+      })
+      .catch(() => {})
+      .finally(() => {
+        prefetchingRef.current = false
+      })
+  }, [index, tracks, selectedPlaylistId, playlistTotal, appendTracks])
 
   const runSearch = async (query: string) => {
     setLoading(true)
@@ -188,9 +212,9 @@ export default function SpotifyPanel() {
 
   return (
     <div className="spotify-panel">
-      {error && (
+      {(error || storeError) && (
         <div className="spotify-error-banner" role="alert">
-          <span className="spotify-error-text">{error}</span>
+          <span className="spotify-error-text">{error || storeError}</span>
           <div className="spotify-error-actions">
             {retryRef.current && (
               <button
@@ -198,7 +222,7 @@ export default function SpotifyPanel() {
                 onClick={() => {
                   const retry = retryRef.current
                   retryRef.current = null
-                  setError('')
+                  clearError()
                   retry?.()
                 }}
               >
@@ -211,7 +235,9 @@ export default function SpotifyPanel() {
               aria-label="Dismiss error"
               title="Dismiss"
             >
-              x
+              <svg viewBox="0 0 12 12" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                <path d="M2 2l8 8M10 2l-8 8" />
+              </svg>
             </button>
           </div>
         </div>
@@ -229,6 +255,8 @@ export default function SpotifyPanel() {
           placeholder={loading ? 'Loading playlists...' : 'Choose playlist...'}
           ariaLabel="Choose a Spotify playlist"
           disabled={loading && playlists.length === 0}
+          searchable
+          searchPlaceholder="Search playlists..."
         />
         {loading ? (
           <span className="loading-indicator" aria-label="Loading" />
@@ -271,7 +299,9 @@ export default function SpotifyPanel() {
             aria-label="Clear search results"
             title="Clear search"
           >
-            x
+            <svg viewBox="0 0 12 12" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+              <path d="M2 2l8 8M10 2l-8 8" />
+            </svg>
           </button>
         )}
       </form>

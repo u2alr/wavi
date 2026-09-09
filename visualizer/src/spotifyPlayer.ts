@@ -127,16 +127,21 @@ export async function disconnectSpotifyPlayer() {
     await player.disconnect?.()
     player = null
     deviceId = null
+    transferredDeviceId = null
   }
 }
 
-/** Make the SDK device the active playback device. */
+let transferredDeviceId: string | null = null
+
+/** Make the SDK device the active playback device (once per device). */
 export async function transferPlaybackToDevice(deviceId: string): Promise<void> {
+  if (transferredDeviceId === deviceId) return
   await spotifyApi<void>('/me/player', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ device_ids: [deviceId], play: false }),
   })
+  transferredDeviceId = deviceId
   // Spotify can acknowledge the transfer before the device accepts commands.
   await new Promise((resolve) => setTimeout(resolve, 350))
 }

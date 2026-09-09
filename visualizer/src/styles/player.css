@@ -1,0 +1,535 @@
+/* ─── AUDIO PLAYER BOX — Now Playing hero · plain solid surface ─── */
+.audio-player-box {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border: 1px solid var(--apb-edge, #c6ccd2);
+  border-radius: 12px;
+  background: #fff;
+  padding: 9px;
+  box-shadow: none;
+}
+
+.apb-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.apb-art {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: rgba(0, 0, 0, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--xp-text-dim);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+.apb-art-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.apb-art-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.apb-meta {
+  min-width: 0;
+  flex: 1;
+  animation: apb-meta-in 0.28s var(--panel-ease);
+}
+
+@keyframes apb-meta-in {
+  from { opacity: 0; transform: translateY(4px); }
+}
+
+.apb-fill.sweep {
+  animation: apb-sweep 0.25s ease-out;
+}
+
+@keyframes apb-sweep {
+  from { width: var(--apb-from, 0%); }
+}
+
+.apb-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--xp-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: -0.015em;
+  line-height: 1.3;
+}
+
+.apb-artist {
+  font-size: 12px;
+  color: var(--xp-text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
+
+/* iPhone-style equalizer at the right of the track row. */
+.apb-eq {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 16px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.apb-eq span {
+  display: block;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--wavi-accent);
+  transform: scaleY(0.35);
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: apb-eq-bounce 0.9s ease-in-out infinite;
+}
+
+.apb-eq span:nth-child(1) { height: 65%; }
+.apb-eq span:nth-child(2) { height: 100%; animation-delay: 0.15s; }
+.apb-eq span:nth-child(3) { height: 75%; animation-delay: 0.3s; }
+.apb-eq span:nth-child(4) { height: 85%; animation-delay: 0.45s; }
+
+.apb-eq.paused span {
+  animation-play-state: paused;
+  transform: scaleY(0.4);
+  opacity: 0.45;
+}
+
+@keyframes apb-eq-bounce {
+  0%, 100% { transform: scaleY(0.3); }
+  50% { transform: scaleY(1); }
+}
+
+.apb-track {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 24px;
+  cursor: pointer;
+  border-radius: 8px;
+  padding: 2px;
+}
+
+.apb-track:focus-visible {
+  outline: 2px solid var(--wavi-accent);
+  outline-offset: -2px;
+}
+
+.apb-time {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--xp-text-dim);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  min-width: 32px;
+}
+
+.apb-time:last-child {
+  text-align: right;
+}
+
+.apb-bar {
+  flex: 1;
+  min-width: 0;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(26, 36, 0, 0.16);
+  overflow: hidden;
+}
+
+.apb-fill {
+  height: 100%;
+  background: linear-gradient(to right, color-mix(in srgb, var(--wavi-accent) 68%, black), color-mix(in srgb, #6fa800 68%, black));
+  border-radius: 999px;
+  transition: width 0.15s linear;
+}
+
+.apb-track.dragging .apb-bar {
+  background: rgba(26, 36, 0, 0.24);
+}
+
+.apb-track.dragging .apb-fill {
+  transition: none;
+}
+
+.apb-controls {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.apb-transport {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.apb-transport .xp-btn {
+  width: 26px;
+  height: 26px;
+  min-height: 26px;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.apb-transport .xp-btn.primary {
+  width: 30px;
+  height: 30px;
+  min-height: 30px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+
+.apb-volume {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 999px;
+  padding: 3px 10px 3px 4px;
+}
+
+.apb-vol-val {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--xp-text-dim);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  min-width: 34px;
+  text-align: right;
+}
+
+.apb-mute-btn {
+  border: none;
+  background: transparent;
+  color: var(--xp-text-dim);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: background var(--panel-dur) ease, color var(--panel-dur) ease;
+}
+
+.apb-mute-btn:hover {
+  color: var(--xp-text);
+  background: rgba(0, 0, 0, 0.07);
+}
+
+.apb-volume-slider {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ─── FULLSCREEN PILL (bottom-left, expands right on hover) ─── */
+.fs-pill {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  gap: 10px;
+  height: 50px;
+  width: fit-content;
+  max-width: calc(100% - 36px);
+  padding: 0 14px 0 14px;
+  background: #000;
+  border: 0px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.55);
+  color: #fff;
+  cursor: default;
+  z-index: 25;
+  overflow: hidden;
+  will-change: grid-template-columns, padding;
+  transition: grid-template-columns 0.9s cubic-bezier(0.35, 0, 0.15, 1), padding 0.9s cubic-bezier(0.35, 0, 0.15, 1);
+}
+
+/* Middle column holds the transport: 0fr collapsed, 1fr on hover, so the
+   pill extends rightward and the eq rides to the end. */
+.fs-pill.has-transport {
+  grid-template-columns: auto 0fr auto;
+}
+
+.fs-pill.has-transport:hover,
+.fs-pill.has-transport:focus-within {
+  grid-template-columns: auto 1fr auto;
+  padding-right: 16px;
+}
+
+.fs-pill-art {
+  width: 29px;
+  height: 29px;
+  border-radius: 8px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: #1c1c1e;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.fs-pill-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.fs-pill-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fs-pill-eq {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.fs-pill-eq span {
+  width: 3px;
+  height: 8px;
+  max-height: 16px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  transform-origin: center;
+  will-change: transform, opacity;
+}
+
+/* Spotify fallback — SDK audio can't feed the analyser, so pulse via CSS. */
+.fs-pill[data-mode="css"].playing .fs-pill-eq span {
+  animation: fs-dot 1.2s ease-in-out infinite;
+}
+
+.fs-pill[data-mode="css"] .fs-pill-eq span:nth-child(1) { animation-delay: 0s; }
+.fs-pill[data-mode="css"] .fs-pill-eq span:nth-child(2) { animation-delay: 0.15s; }
+.fs-pill[data-mode="css"] .fs-pill-eq span:nth-child(3) { animation-delay: 0.3s; }
+.fs-pill[data-mode="css"] .fs-pill-eq span:nth-child(4) { animation-delay: 0.45s; }
+.fs-pill[data-mode="css"] .fs-pill-eq span:nth-child(5) { animation-delay: 0.6s; }
+.fs-pill[data-mode="css"] .fs-pill-eq span:nth-child(6) { animation-delay: 0.75s; }
+
+.fs-pill[data-state="idle"] .fs-pill-eq span {
+  animation: fs-idle 2.4s ease-in-out infinite;
+}
+
+.fs-pill[data-state="idle"] .fs-pill-eq span:nth-child(1) { animation-delay: 0s; }
+.fs-pill[data-state="idle"] .fs-pill-eq span:nth-child(2) { animation-delay: 0.2s; }
+.fs-pill[data-state="idle"] .fs-pill-eq span:nth-child(3) { animation-delay: 0.4s; }
+.fs-pill[data-state="idle"] .fs-pill-eq span:nth-child(4) { animation-delay: 0.6s; }
+.fs-pill[data-state="idle"] .fs-pill-eq span:nth-child(5) { animation-delay: 0.8s; }
+.fs-pill[data-state="idle"] .fs-pill-eq span:nth-child(6) { animation-delay: 1s; }
+
+@keyframes fs-dot {
+  0%, 100% { transform: scale(0.65); opacity: 0.45; }
+  50% { transform: scale(1.45); opacity: 1; }
+}
+
+@keyframes fs-idle {
+  0%, 100% { transform: scale(0.75); opacity: 0.35; }
+  50% { transform: scale(1.1); opacity: 0.7; }
+}
+
+/* Container only gates visibility (delayed on exit so the buttons can
+   float back up first); the falling animation lives on the buttons. */
+.fs-pill-transport {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  visibility: hidden;
+  transition: visibility 0s linear 0.85s;
+}
+
+.fs-pill:hover .fs-pill-transport,
+.fs-pill:focus-within .fs-pill-transport {
+  visibility: visible;
+  transition-delay: 0s;
+}
+
+.fs-pill-transport-inner {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.fs-pill-transport button {
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  opacity: 0;
+  transform: translateY(-16px);
+  filter: blur(2px);
+  will-change: opacity, transform, filter;
+  /* Teardrop fall: transform runs on a gravity ease-in (starts slow,
+     accelerates down); opacity/filter lag slightly so the silhouette
+     drops in first and materializes mid-fall. */
+  transition:
+    opacity 0.2s ease,
+    transform 0.3s cubic-bezier(0.55, 0.06, 0.68, 0.19),
+    filter 0.2s ease,
+    background 0.35s ease;
+}
+
+.fs-pill:hover .fs-pill-transport button,
+.fs-pill:focus-within .fs-pill-transport button {
+  opacity: 1;
+  transform: translateY(0);
+  filter: blur(0);
+}
+
+/* Staggered fall while the pill extends: prev → play → next, one by
+   one. Delay order per button is opacity, transform, filter,
+   background — the drop leads, the fade follows. */
+.fs-pill:hover .fs-pill-transport-inner button:nth-child(1),
+.fs-pill:focus-within .fs-pill-transport-inner button:nth-child(1) {
+  transition-delay: 0.14s, 0.07s, 0.14s, 0s;
+}
+
+.fs-pill:hover .fs-pill-transport-inner button:nth-child(2),
+.fs-pill:focus-within .fs-pill-transport-inner button:nth-child(2) {
+  transition-delay: 0.22s, 0.15s, 0.22s, 0s;
+}
+
+.fs-pill:hover .fs-pill-transport-inner button:nth-child(3),
+.fs-pill:focus-within .fs-pill-transport-inner button:nth-child(3) {
+  transition-delay: 0.3s, 0.23s, 0.3s, 0s;
+}
+
+.fs-pill-transport button:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* Play/pause glyph drops in on every toggle (the key on .fs-pill-icon
+   remounts it, retriggering this). Same gravity ease as the buttons. */
+.fs-pill-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fs-pill-icon > svg {
+  animation: fs-icon-drop 0.2s cubic-bezier(0.55, 0.06, 0.68, 0.19);
+}
+
+@keyframes fs-icon-drop {
+  from {
+    transform: translateY(-10px);
+    opacity: 0;
+    filter: blur(2px);
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+
+/* The icon drop only ever plays right after the user's own click,
+   so it stays available under reduced-motion like the hover fall. */
+
+.fs-pill-transport button:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Hover/toggle feedback is user-summoned and bounded, so it stays —
+     only ambient, self-playing motion rests. (If everything snaps to
+     instant, the OS has "Animation effects" off, which reports reduce.) */
+  .fs-pill-eq span {
+    animation: none;
+  }
+  .apb-fill {
+    transition: none;
+  }
+  .apb-eq span {
+    animation: none;
+  }
+  .apb-meta,
+  .apb-fill.sweep {
+    animation: none;
+  }
+  .loading-indicator,
+  .spotify-eq span {
+    animation: none;
+  }
+  .xp-toast,
+  .xp-toast.show {
+    transition-duration: 0.01ms;
+  }
+  .control-panel,
+  .control-panel-scroll {
+    transition-duration: 0.01ms;
+  }
+  .ctrl-group-body {
+    transition-duration: 0.01ms;
+  }
+  .accordion-arrow {
+    transition: none;
+  }
+  .ctrl-group-title {
+    transition: none;
+  }
+  .ctrl-group::before {
+    transition: none;
+  }
+  .brat-switch,
+  .brat-switch::after {
+    transition-duration: 0.01ms;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    transition: none;
+  }
+  .xp-btn,
+  .btn-tiny,
+  .preset-chip,
+  .spotify-track {
+    transition-duration: 0.01ms;
+  }
+  .panel-select-popover {
+    transition-duration: 0.01ms;
+    animation: none;
+  }
+  .panel-select-chevron {
+    transition: none;
+  }
+}
+

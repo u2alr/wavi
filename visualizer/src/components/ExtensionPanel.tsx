@@ -73,8 +73,8 @@ export default function ExtensionPanel({ status }: { status: string }) {
             </button>
           </li>
           <li>
-            Open this app (<code>http://127.0.0.1:5173/</code>), start Spotify or local playback{' '}
-            <b>in this same tab</b>.
+            Open this app (<code>http://127.0.0.1:5173/</code> locally or{' '}
+            <code>https://wavi.lol</code>), start Spotify or local playback <b>in this same tab</b>.
           </li>
           <li>
             Click the <b>wavi.lol Audio Bridge</b> toolbar button once per session — status above

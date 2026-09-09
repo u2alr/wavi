@@ -1,0 +1,96 @@
+/* ══════════════════════════════════════════════════════════════════════════════
+   wavi.lol — Apple HIG / macOS porcelain + graphite design system
+   Soft pastel green #C3F588 is the accent color (dark theme).
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* Accent — soft pastel green (dark theme) */
+  --wavi-accent: #c3f588;
+  --wavi-accent-ink: #f4f8ff;
+  --wavi-accent-hover: #d5ff9f;
+  --wavi-accent-tint: rgba(195, 245, 136, 0.14);
+  --wavi-accent-tint-soft: rgba(195, 245, 136, 0.12);
+
+  /* Text */
+  --xp-text: var(--panel-ink);
+  --xp-text-dim: var(--panel-muted);
+
+  /* Shared surfaces */
+  --wavi-surface: #fff;
+  --wavi-hairline: rgba(0, 0, 0, 0.12);
+
+  /* Sidepanel dark surfaces */
+  --panel-bg: #0b0b0d;
+  --panel-bg-strong: #111113;
+  --panel-card: rgba(255, 255, 255, 0.44);
+  --panel-card-border: rgba(20, 24, 32, 0.1);
+  --panel-card-shadow: 0 1px 2px rgba(20, 24, 32, 0.06), 0 8px 24px rgba(20, 24, 32, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  --panel-card-dark: #1b1b1f;
+  --panel-card-dark-hover: #222327;
+  --panel-well: rgba(17, 22, 30, 0.06);
+  --panel-well-border: rgba(20, 24, 32, 0.1);
+  --panel-hover: rgba(17, 22, 30, 0.05);
+  --panel-pressed: rgba(17, 22, 30, 0.09);
+  --panel-ink: #f3f3f4;
+  --panel-muted: #a5a7ad;
+  --panel-faint: #696d76;
+  --panel-line: rgba(255, 255, 255, 0.08);
+  --panel-line-strong: rgba(255, 255, 255, 0.14);
+  --panel-fill: rgba(255, 255, 255, 0.055);
+  --panel-fill-hover: rgba(255, 255, 255, 0.095);
+  --panel-focus: rgba(195, 245, 136, 0.42);
+
+  /* Error / Danger */
+  --wavi-error-surface: rgba(255, 69, 58, 0.12);
+  --wavi-error-text: #ffb4ae;
+  --wavi-error-border: rgba(255, 69, 58, 0.28);
+
+  /* Radius & motion */
+  --panel-radius-well: 10px;
+  --panel-ease: cubic-bezier(0.2, 0.9, 0.25, 1);
+  --panel-dur: 160ms;
+
+  /* Typography */
+  --font-system: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", Inter, "Helvetica Neue", sans-serif;
+  --font-mono: "SF Mono", ui-monospace, "Consolas", "Courier New", monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  background-color: #dde1e6;
+  background-image:
+    radial-gradient(1000px 600px at 12% 8%, rgba(138, 206, 0, 0.16), transparent 60%),
+    radial-gradient(900px 700px at 72% 22%, rgba(255, 255, 255, 0.18), transparent 62%),
+    radial-gradient(900px 700px at 85% 90%, rgba(138, 206, 0, 0.1), transparent 62%),
+    radial-gradient(700px 500px at 24% 80%, rgba(255, 255, 255, 0.15), transparent 60%),
+    radial-gradient(ellipse at 50% 18%, rgba(255, 255, 255, 0.45) 0%, transparent 40%),
+    linear-gradient(180deg, #f0f3f5 0%, #dde1e6 55%, #c9d0d8 100%);
+  background-attachment: fixed;
+  font-family: var(--font-system);
+  color: var(--xp-text);
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Page backdrop stays clean — no vignette darkening the window edges */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background: none;
+}
+
+#root {
+  position: relative;
+  z-index: 1;
+}
+

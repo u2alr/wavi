@@ -1,0 +1,1627 @@
+/* Sidepanel overhaul: calm inspector layout, denser hierarchy, fewer nested surfaces. */
+.control-panel {
+  width: 372px;
+  background: var(--panel-bg);
+  border-left: none;
+  box-shadow: none;
+  color: var(--panel-ink);
+}
+
+.control-panel-scroll {
+  gap: 0;
+  padding: 0;
+  scroll-padding: 16px;
+}
+
+/* Static footer — pinned below the scroll area: player on top, auth beneath. */
+.panel-footer {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px 12px;
+
+  transition: opacity var(--panel-dur) ease;
+}
+
+.panel-footer .spotify-auth-bar {
+  margin-bottom: 0;
+}
+
+.control-panel-scroll::-webkit-scrollbar-thumb,
+.spotify-track-list::-webkit-scrollbar-thumb,
+.preset-list::-webkit-scrollbar-thumb,
+.panel-select-popover::-webkit-scrollbar-thumb {
+  background: rgba(22, 25, 30, 0.2);
+}
+
+.ctrl-group {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+  overflow: visible;
+}
+
+.ctrl-group:not(.open) .ctrl-group-body {
+  overflow: hidden;
+}
+
+.ctrl-group:not(.open) .ctrl-group-body > * {
+  visibility: hidden;
+  overflow: hidden;
+}
+
+.ctrl-group + .ctrl-group {
+  border-top: 1px solid var(--panel-line);
+}
+
+.ctrl-group:last-child {
+  margin-bottom: 0;
+}
+
+.ctrl-group-header {
+  min-height: 40px;
+  padding: 10px 12px;
+  border-radius: 0;
+}
+
+.ctrl-group-header:hover {
+  background: rgba(255, 255, 255, 0.42);
+}
+
+.ctrl-group-header:focus-visible {
+  outline: 2px solid var(--wavi-accent);
+  outline-offset: -4px;
+  border-radius: 0;
+}
+
+.ctrl-group-eyebrow-row {
+  gap: 9px;
+}
+
+.ctrl-group-title {
+  font-size: 12px;
+  font-weight: 740;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--panel-ink);
+}
+
+.ctrl-group.open .ctrl-group-title {
+  color: var(--panel-ink);
+}
+
+.ctrl-group-count {
+  min-width: 22px;
+  padding: 2px 7px;
+  border: 1px solid var(--panel-line);
+  background: rgba(255, 255, 255, 0.64);
+  color: var(--panel-muted);
+  font-size: 10.5px;
+}
+
+.accordion-arrow {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: var(--panel-faint);
+}
+
+.ctrl-group-header:hover .accordion-arrow {
+  background: var(--panel-fill-hover);
+}
+
+.ctrl-group-body-inner {
+  gap: 9px;
+  padding: 0 12px 14px;
+}
+
+.audio-source-group .ctrl-group-body-inner {
+  margin: 0 12px 14px;
+  padding: 10px;
+  max-width: calc(100% - 24px);
+  border: 1px solid var(--panel-line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.58);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  overflow-x: clip;
+}
+
+.audio-source-group .spotify-user,
+.audio-source-group .audio-player-box,
+.audio-source-group .field-wrap,
+.audio-source-group .spotify-search,
+.audio-source-group .spotify-track-list,
+.audio-source-group .spotify-empty {
+  max-width: 100%;
+}
+
+.audio-source-group .spotify-track-list {
+  max-height: clamp(130px, 18dvh, 190px);
+}
+
+.field-wrap {
+  gap: 5px;
+}
+
+.field-label {
+  margin: 0;
+  color: var(--panel-muted);
+  font-size: 11px;
+  font-weight: 720;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.field-hint {
+  margin: -2px 0 0;
+  color: var(--panel-muted);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+.spotify-user,
+.audio-player-box,
+.sliders-container,
+.spotify-track-list,
+.spotify-empty,
+.preset-empty,
+.extension-panel {
+  border-color: var(--panel-line);
+  background: rgba(255, 255, 255, 0.56);
+  box-shadow: none;
+}
+
+.spotify-user {
+  min-height: 38px;
+  padding: 5px 7px;
+  border-radius: 10px;
+}
+
+.spotify-name {
+  font-size: 13px;
+  font-weight: 680;
+}
+
+.spotify-disconnect,
+.btn-tiny {
+  border-radius: 8px;
+  background: transparent;
+  border-color: transparent;
+  color: var(--panel-muted);
+}
+
+.spotify-disconnect:hover,
+.btn-tiny:hover {
+  background: var(--panel-fill-hover);
+  color: var(--panel-ink);
+}
+
+.spotify-panel {
+  gap: 8px;
+  margin-top: 0;
+}
+
+.spotify-connect-btn {
+  min-height: 36px;
+  font-size: 13px;
+}
+
+.spotify-playlist-row {
+  gap: 6px;
+}
+
+.spotify-reload-btn {
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  border-radius: 9px;
+}
+
+.panel-select-trigger,
+.spotify-search input,
+select.xp-select,
+.xp-input {
+  min-height: 33px;
+  border-radius: 9px;
+  border-color: var(--panel-line);
+  background: rgba(255, 255, 255, 0.68);
+  box-shadow: none;
+  color: var(--panel-ink);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.panel-select-trigger {
+  padding: 5px 5px 5px 9px;
+}
+
+.panel-select-trigger:hover,
+.spotify-search input:hover,
+select.xp-select:hover,
+.xp-input:hover {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: var(--panel-line-strong);
+}
+
+.panel-select[data-open] .panel-select-trigger,
+.panel-select-trigger:focus-visible,
+select.xp-select:focus-visible,
+.xp-input:focus-visible,
+.panel-select-search input:focus-visible,
+.spotify-search input:focus-visible {
+  outline: 3px solid var(--panel-focus);
+  outline-offset: 0;
+  border-color: rgba(92, 135, 0, 0.5);
+  box-shadow: none;
+  background: #fff;
+}
+
+.panel-select-chevron-slot {
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--panel-fill);
+}
+
+.panel-select-popover {
+  top: calc(100% + 7px);
+  max-height: min(220px, 40vh);
+  padding: 5px;
+  border-radius: 10px;
+  border-color: var(--panel-line-strong);
+  /* Solid — a translucent popover turns ghostly over dark content. */
+  background: #fff;
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.18);
+}
+
+.panel-select-option {
+  min-height: 31px;
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 12.5px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.panel-select-option:hover,
+.panel-select-option[data-active] {
+  background: var(--panel-fill-hover);
+}
+
+.spotify-search {
+  margin: 0;
+}
+
+.spotify-search .spotify-search-icon {
+  left: 12px;
+}
+
+.spotify-search input {
+  padding: 6px 28px 6px 29px;
+}
+
+.search-clear,
+.spotify-error-dismiss,
+.preset-chip .del {
+  font-family: var(--font-system);
+}
+
+.search-clear {
+  right: 7px;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  background: transparent;
+  font-size: 12px;
+}
+
+.search-clear:hover,
+.spotify-error-dismiss:hover {
+  background: var(--panel-fill-hover);
+}
+
+.spotify-track-list {
+  max-height: clamp(150px, 22dvh, 220px);
+  gap: 2px;
+  padding: 4px;
+  border-radius: 10px;
+}
+
+.spotify-track {
+  min-height: 38px;
+  gap: 7px;
+  padding: 5px 7px 5px 5px;
+  border-radius: 8px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.spotify-track:hover {
+  background: rgba(255, 255, 255, 0.78);
+  border-color: transparent;
+}
+
+/* Section labels separating search results from the playlist queue. */
+.spotify-list-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--xp-text-dim);
+  padding: 6px 8px 3px;
+}
+
+/* Theme-tinted text selection so selected rows never flash native blue. */
+.spotify-panel ::selection {
+  background: color-mix(in srgb, var(--wavi-accent) 32%, transparent);
+}
+
+.spotify-track-art {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+}
+
+.spotify-track-index {
+  width: 20px;
+  color: var(--panel-faint);
+  font-size: 11px;
+}
+
+.spotify-track-title {
+  font-size: 12.75px;
+  line-height: 1.25;
+  font-weight: 500;
+}
+
+.spotify-track-artist {
+  margin-top: 2px;
+  font-size: 11.5px;
+  line-height: 1.25;
+  color: var(--panel-muted);
+}
+
+.spotify-empty,
+.preset-empty {
+  padding: 13px 10px;
+  border-style: dashed;
+  background: rgba(255, 255, 255, 0.36);
+}
+
+.spotify-empty-icon,
+.preset-empty-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: var(--panel-fill);
+}
+
+.spotify-empty-text,
+.preset-empty-text {
+  color: var(--panel-muted);
+  font-size: 12px;
+}
+
+.spotify-error-banner {
+  gap: 8px;
+  border-radius: 10px;
+  padding: 8px;
+}
+
+.spotify-error-dismiss {
+  font-size: 12px;
+}
+
+.audio-player-box {
+  position: relative;
+  gap: 1px;
+  padding: 10px;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid var(--apb-edge, rgba(26, 36, 0, 0.25));
+  box-shadow: none;
+}
+
+/* Adaptive ink + solid control surfaces — beats every translucent default. */
+.audio-player-box .apb-title { color: var(--apb-ink, var(--xp-text)); }
+.audio-player-box .apb-artist,
+.audio-player-box .apb-time,
+.audio-player-box .apb-vol-val { color: var(--apb-dim, var(--xp-text-dim)); }
+.audio-player-box .apb-mute-btn { color: var(--apb-dim, var(--xp-text-dim)); }
+.audio-player-box .apb-eq span { background: var(--apb-ink, var(--wavi-accent)); }
+.audio-player-box .apb-eq { background: var(--apb-g3, #ffffff); }
+.audio-player-box .apb-volume {
+  background: var(--apb-g3, #ffffff);
+  border-color: var(--apb-edge, rgba(0, 0, 0, 0.06));
+}
+.audio-player-box .apb-bar { background: var(--apb-g3, rgba(26, 36, 0, 0.16)); }
+.audio-player-box .xp-btn:not(.primary) {
+  background: var(--apb-g3, #ffffff);
+  border-color: var(--apb-edge, rgba(0, 0, 0, 0.09));
+  color: var(--apb-ink, var(--xp-text));
+  box-shadow: none;
+}
+.audio-player-box .xp-btn:not(.primary):hover {
+  background: var(--apb-g3, #ffffff);
+  border-color: var(--apb-edge, rgba(0, 0, 0, 0.14));
+  filter: brightness(0.96);
+}
+
+/* Cover-bleed surface — transparent stops defer to the theme background. */
+.audio-player-box {
+  background-image: linear-gradient(135deg, var(--apb-g1, transparent), var(--apb-g2, transparent));
+}
+
+.apb-row {
+  gap: 8px;
+}
+
+.apb-art {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.16), 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+
+.apb-title {
+  font-size: 14px;
+  line-height: 1.18;
+  font-weight: 760;
+}
+
+.apb-artist {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.25;
+  color: var(--panel-muted);
+}
+
+.apb-eq {
+  height: 18px;
+  padding: 3px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.42);
+}
+
+.apb-track {
+  min-height: 26px;
+  padding: 0;
+  gap: 7px;
+}
+
+.apb-time,
+.apb-vol-val {
+  color: var(--panel-muted);
+  font-size: 11px;
+}
+
+.apb-bar {
+  height: 6px;
+  background: rgba(26, 36, 0, 0.14);
+}
+
+.apb-fill {
+  background: linear-gradient(90deg, color-mix(in srgb, #78b800 66%, black), color-mix(in srgb, var(--wavi-accent) 68%, black), color-mix(in srgb, #b6e73f 64%, black));
+}
+
+.apb-controls {
+  gap: 8px;
+}
+
+.apb-transport {
+  gap: 4px;
+}
+
+.apb-transport .xp-btn {
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+  border-radius: 9px;
+}
+
+.apb-transport .xp-btn.primary {
+  width: 34px;
+  height: 34px;
+  min-height: 34px;
+  border-radius: 10px;
+}
+
+.apb-volume {
+  min-height: 33px;
+  padding: 2px 8px 2px 3px;
+  border-radius: 10px;
+  border-color: var(--panel-line);
+  background: rgba(255, 255, 255, 0.56);
+}
+
+.apb-mute-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+}
+
+.sliders-container {
+  gap: 0;
+  padding: 4px 0;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.ctrl-row {
+  min-height: 36px;
+  padding: 0px 8px;
+  gap: 8px;
+}
+
+.ctrl-row + .ctrl-row {
+  border-top: 1px solid rgba(22, 25, 30, 0.07);
+}
+
+.slider-label {
+  width: 76px;
+}
+
+.ctrl-row label {
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.ctrl-row .val {
+  min-width: 42px;
+  padding: 2px 5px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--panel-fill);
+  color: var(--panel-muted);
+  font-size: 11px;
+}
+
+input[type="range"] {
+  height: 20px;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 6px;
+  background: linear-gradient(to right, var(--wavi-accent) 0 var(--p), rgba(22, 25, 30, 0.14) var(--p) 100%);
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  width: 15px;
+  height: 15px;
+  margin-top: -4.5px;
+  border-color: rgba(22, 25, 30, 0.2);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.22);
+}
+
+input[type="range"]::-moz-range-track,
+input[type="range"]::-moz-range-progress {
+  height: 6px;
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 15px;
+  height: 15px;
+}
+
+.brat-bg-toggle {
+  min-height: 33px;
+  margin: 2px 0 0;
+  padding: 6px 8px;
+  border: 1px solid var(--panel-line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.48);
+}
+
+.brat-bg-label {
+  color: var(--panel-ink);
+  font-weight: 620;
+}
+
+.xp-btn {
+  min-height: 32px;
+  padding: 6px 10px;
+  border-radius: 9px;
+  border-color: var(--panel-line);
+  background: rgba(255, 255, 255, 0.66);
+  box-shadow: none;
+  font-size: 12.5px;
+  font-weight: 680;
+}
+
+.xp-btn:hover {
+  background: #fff;
+  border-color: var(--panel-line-strong);
+}
+
+.xp-btn:focus-visible,
+.btn-tiny:focus-visible,
+.spotify-disconnect:focus-visible,
+.spotify-error-retry:focus-visible,
+.spotify-error-dismiss:focus-visible,
+.menu-ext-badge:focus-visible,
+.search-clear:focus-visible,
+.chip-load:focus-visible,
+.preset-chip .del:focus-visible,
+.brat-bg-toggle input[type="checkbox"]:focus-visible + .brat-switch,
+input[type="range"]:focus-visible {
+  outline: 3px solid var(--panel-focus);
+  outline-offset: 0;
+}
+
+.xp-btn.primary {
+  color: #152000;
+  border-color: rgba(79, 118, 0, 0.28);
+  background: linear-gradient(180deg, #a9df22, var(--wavi-accent));
+  box-shadow: 0 7px 16px rgba(98, 146, 0, 0.16);
+}
+
+.btn-tiny {
+  min-height: 28px;
+  padding: 5px 9px;
+  font-size: 12px;
+}
+
+.preset-actions {
+  gap: 6px;
+}
+
+.preset-actions > * {
+  min-height: 32px;
+}
+
+.save-preset-bar {
+  gap: 6px;
+}
+
+.preset-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 5px;
+  max-height: 130px;
+  padding-right: 2px;
+}
+
+.preset-chip {
+  width: 100%;
+  min-width: 0;
+  justify-content: space-between;
+  padding: 4px 4px 4px 8px;
+  border-radius: 10px;
+  border-color: var(--panel-line);
+  background: rgba(255, 255, 255, 0.52);
+}
+
+.preset-chip:hover {
+  background: rgba(255, 255, 255, 0.88);
+  border-color: var(--panel-line-strong);
+}
+
+.chip-load {
+  flex: 1;
+  padding: 6px 3px;
+}
+
+.chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preset-chip .del {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.reset-row {
+  margin-top: -2px;
+}
+
+.xp-toast-region {
+  left: 14px;
+  right: 14px;
+  top: 76px;
+}
+
+.xp-toast {
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 12.5px;
+}
+
+@media (max-width: 860px) {
+  .control-panel {
+    width: min(410px, 94vw);
+    box-shadow: -18px 0 42px rgba(0, 0, 0, 0.24);
+  }
+
+  .control-panel.collapsed {
+    width: min(410px, 94vw);
+  }
+
+  .ctrl-group-header {
+    padding: 13px 14px;
+  }
+
+  .ctrl-group-body-inner {
+    padding: 0 14px 16px;
+  }
+
+  .audio-source-group .ctrl-group-body-inner {
+    margin: 0 14px 16px;
+    max-width: calc(100% - 28px);
+  }
+
+  .spotify-track-list {
+    max-height: clamp(164px, 28dvh, 238px);
+  }
+
+  .audio-source-group .spotify-track-list {
+    max-height: clamp(144px, 24dvh, 210px);
+  }
+}
+
+@media (max-width: 430px) {
+  .control-panel,
+  .control-panel.collapsed {
+    width: 100vw;
+  }
+
+  .apb-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .apb-transport {
+    justify-content: center;
+  }
+
+  .ctrl-row {
+    align-items: stretch;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 6px 10px;
+  }
+
+  .ctrl-row input[type="range"] {
+    grid-column: 1 / -1;
+    order: 3;
+  }
+
+  .slider-label {
+    width: auto;
+  }
+}
+
+/* Dark mode palette inspired by the MiniCorp reference. */
+body {
+  background-color: #050506;
+  background-image:
+    radial-gradient(900px 540px at 18% 0%, rgba(195, 245, 136, 0.07), transparent 58%),
+    radial-gradient(720px 520px at 88% 20%, rgba(255, 255, 255, 0.03), transparent 60%),
+    linear-gradient(180deg, #121216 0%, #0a0a0d 60%, #070709 100%);
+}
+
+.xp-window {
+  background: rgba(10, 10, 12, 0.78);
+  outline-color: transparent;
+  box-shadow: none;
+}
+
+.window-chrome,
+.status-bar {
+  background: rgba(12, 12, 14, 0.88);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.title-bar,
+.title-bar-text,
+.menu-item,
+.status-val {
+  color: var(--panel-ink);
+}
+
+.menu-item:hover,
+.menu-item.active,
+.menu-ext-badge:hover,
+.menu-ext-badge.active {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.menu-dropdown {
+  background: rgba(20, 20, 23, 0.96);
+  border-color: var(--panel-line-strong);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.42);
+}
+
+.dropdown-item {
+  color: var(--panel-ink);
+}
+
+.dropdown-item:hover {
+  background: var(--panel-fill-hover);
+}
+
+.dropdown-divider {
+  background: var(--panel-line);
+}
+
+.shortcut-hint,
+.status-label,
+.status-right {
+  color: var(--panel-muted);
+}
+
+.control-panel {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0)),
+    var(--panel-bg);
+  border-left-color: rgba(255, 255, 255, 0.08);
+  color: var(--panel-ink);
+}
+
+.ctrl-group-title,
+.spotify-name,
+.spotify-track-title,
+.ctrl-row label,
+.brat-bg-label,
+.panel-select-trigger,
+.spotify-search input,
+select.xp-select,
+.xp-input,
+.xp-btn {
+  color: var(--panel-ink);
+}
+
+.panel-header-sub,
+.field-label,
+.field-hint,
+.spotify-track-artist,
+.apb-artist,
+.apb-time,
+.apb-vol-val,
+.spotify-empty-text,
+.preset-empty-text,
+.spotify-disconnect,
+.btn-tiny {
+  color: var(--panel-muted);
+}
+
+.ctrl-group + .ctrl-group,
+.ctrl-group-header {
+  border-color: var(--panel-line);
+}
+
+.ctrl-group-header:hover {
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.ctrl-group-count,
+.spotify-user,
+.audio-player-box,
+.sliders-container,
+.spotify-track-list,
+.spotify-empty,
+.preset-empty,
+.extension-panel,
+.brat-bg-toggle,
+.apb-volume {
+  border-color: var(--panel-line-strong);
+  background: var(--panel-card-dark);
+}
+
+.audio-source-group .ctrl-group-body-inner {
+  border-color: var(--panel-line-strong);
+  background: #151518;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+.audio-player-box {
+  background: #151518;
+  /* Cover bleed — transparent stops defer to the flat color above. */
+  background-image: linear-gradient(135deg, var(--apb-g1, transparent), var(--apb-g2, transparent));
+  border: 1px solid var(--apb-edge, rgba(255, 255, 255, 0.14));
+  box-shadow: none;
+}
+
+.audio-player-box .apb-title { color: var(--apb-ink, #f4f6f8); }
+.audio-player-box .apb-artist,
+.audio-player-box .apb-time,
+.audio-player-box .apb-vol-val { color: var(--apb-dim, #a5a7ad); }
+.audio-player-box .apb-mute-btn { color: var(--apb-dim, #a5a7ad); }
+.audio-player-box .apb-eq span { background: var(--apb-ink, #c3f588); }
+.audio-player-box .apb-eq { background: var(--apb-g3, #202126); }
+.audio-player-box .apb-volume {
+  background: var(--apb-g3, #202126);
+  border-color: var(--apb-edge, rgba(255, 255, 255, 0.14));
+}
+.audio-player-box .apb-bar { background: var(--apb-g3, rgba(255, 255, 255, 0.14)); }
+.audio-player-box .xp-btn:not(.primary) {
+  background: var(--apb-g3, #202126);
+  border-color: var(--apb-edge, rgba(255, 255, 255, 0.14));
+  color: var(--apb-ink, #f4f6f8);
+  box-shadow: none;
+}
+.audio-player-box .xp-btn:not(.primary):hover {
+  background: var(--apb-g3, #202126);
+  border-color: var(--apb-edge, rgba(255, 255, 255, 0.2));
+  filter: brightness(1.12);
+}
+
+.spotify-user,
+.spotify-track-list,
+.spotify-empty,
+.preset-empty,
+.sliders-container {
+  background: #18181b;
+}
+
+.spotify-track:hover,
+.preset-chip:hover,
+.panel-select-option:hover,
+.panel-select-option[data-active] {
+  background: var(--panel-card-dark-hover);
+}
+
+.panel-select-option.selected {
+  background: color-mix(in srgb, var(--wavi-accent) 14%, transparent) !important;
+  color: var(--wavi-accent-ink);
+}
+
+.spotify-track.active {
+  background: transparent;
+  border-color: var(--wavi-accent);
+}
+
+.spotify-track.active:hover {
+  background: color-mix(in srgb, var(--wavi-accent) 8%, transparent) !important;
+}
+
+.spotify-eq span {
+  color: var(--panel-ink) !important;
+  background: var(--wavi-accent);
+}
+
+.panel-select-trigger,
+.spotify-search input,
+.panel-select-search input,
+select.xp-select,
+.xp-input {
+  border-color: var(--panel-line-strong);
+  background: #16161a;
+}
+
+.panel-select-trigger:hover,
+.spotify-search input:hover,
+select.xp-select:hover,
+.xp-input:hover,
+.xp-btn:hover,
+.spotify-disconnect:hover,
+.btn-tiny:hover {
+  background: #202126;
+  border-color: rgba(255, 255, 255, 0.18);
+  color: var(--panel-ink);
+  box-shadow: none;
+}
+
+.panel-select-popover {
+  background: #18181c;
+  border-color: var(--panel-line-strong);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
+}
+
+.panel-select[data-open] .panel-select-trigger,
+.panel-select-trigger:focus-visible,
+select.xp-select:focus-visible,
+.xp-input:focus-visible,
+.panel-select-search input:focus-visible,
+.spotify-search input:focus-visible {
+  background: #1a1b20;
+  border-color: rgba(195, 245, 136, 0.5);
+}
+
+.panel-select-chevron-slot,
+.ctrl-row .val,
+.spotify-empty-icon,
+.preset-empty-icon,
+.apb-eq,
+.spotify-disconnect,
+.btn-tiny,
+.search-clear,
+.preset-chip .del {
+  background: var(--panel-fill);
+}
+
+.spotify-search input::placeholder {
+  color: #777b84;
+}
+
+.spotify-track-index {
+  color: #7b7f88;
+}
+
+.spotify-track-art,
+.apb-art {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.apb-bar,
+input[type="range"]::-webkit-slider-runnable-track {
+  background: linear-gradient(to right, var(--wavi-accent) 0 var(--p), rgba(255, 255, 255, 0.09) var(--p) 100%);
+}
+
+.apb-fill {
+  background: var(--wavi-accent);
+}
+
+.apb-eq span {
+  background: var(--wavi-accent);
+}
+
+.apb-volume {
+  background: #151518;
+}
+
+.apb-mute-btn {
+  color: var(--panel-muted);
+}
+
+.apb-mute-btn:hover,
+.search-clear:hover,
+.preset-chip .del:hover {
+  color: var(--panel-ink);
+  background: var(--panel-fill-hover);
+}
+
+.xp-btn {
+  border-color: var(--panel-line-strong);
+  background: #1b1b1f;
+}
+
+.xp-btn.primary {
+  color: #152004;
+  border-color: rgba(195, 245, 136, 0.55);
+  background: #c3f588;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
+.xp-btn.primary:hover {
+  background: #d5ff9f;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  background: #f2f4f7;
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+input[type="range"]::-moz-range-track {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+input[type="range"]::-moz-range-progress {
+  background: var(--wavi-accent);
+}
+
+input[type="range"]::-moz-range-thumb {
+  background: #f2f4f7;
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.brat-switch {
+  background: #2a2b30;
+  border-color: var(--panel-line-strong);
+}
+
+.brat-switch::after {
+  background: #f3f4f6;
+}
+
+.brat-bg-toggle input[type="checkbox"]:checked + .brat-switch {
+  background: var(--wavi-accent);
+}
+
+.preset-chip {
+  background: #1b1b1f;
+  border-color: var(--panel-line-strong);
+}
+
+.spotify-error-banner {
+  background: var(--wavi-error-surface);
+  border-color: var(--wavi-error-border);
+}
+
+.spotify-error-retry {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--wavi-error-text);
+}
+
+.extension-panel.is-live {
+  background: rgba(195, 245, 136, 0.1);
+  border-color: rgba(195, 245, 136, 0.22);
+}
+
+.control-panel-scroll,
+.spotify-track-list,
+.preset-list,
+.panel-select-popover {
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+}
+
+/* ─── FIX: long track titles blowing out the panel ─── */
+
+/* Grid items default to min-width:auto, so a nowrap title stretches
+   the accordion track past the panel. Let it shrink: */
+.ctrl-group-body > * {
+  min-width: 0;
+}
+
+/* Same rule for the flex chain above/below it */
+.control-panel-scroll > * {
+  min-width: 0;
+}
+.audio-source-group .ctrl-group-body-inner {
+  min-width: 0;
+  width: auto;
+}
+
+/* Safety net: clip horizontal bleed, but unlike `hidden`,
+   `clip` keeps overflow-y visible so select popovers still
+   escape downward (same trick the original cards used). */
+.ctrl-group {
+  overflow-x: clip;
+}
+
+/* ─── BRAT OVERLAY (single source — no brat rules live in TSX) ─── */
+.brat-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 5;
+}
+
+.brat-overlay .brat-meta {
+  position: absolute;
+  top: 26px;
+  right: 40px;
+  font: 600 14px Arial, sans-serif;
+  color: #1c2400;
+  text-transform: lowercase;
+  filter: blur(0.4px);
+}
+
+.brat-overlay .brat-line {
+  max-width: 35%;
+  text-align: justify;
+  text-align-last: justify;
+  font: 700 clamp(26px, 6vw, 64px) / 1.15 Arial, Helvetica, sans-serif;
+  color: #0d1200;
+  text-transform: lowercase;
+  filter: blur(1.1px);
+  animation: brat-line-in 0.1s cubic-bezier(0.2, 0.6, 0.3, 1);
+}
+
+@keyframes brat-line-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+    filter: blur(2px);
+  }
+}
+
+.brat-overlay .brat-next {
+  margin-top: 16px;
+  font: 400 14px Arial, sans-serif;
+  color: rgba(13, 18, 0, 0.55);
+  filter: blur(0.9px);
+  text-transform: lowercase;
+  max-width: 70%;
+  text-align: justify;
+  text-align-last: justify;
+}
+
+.brat-overlay .brat-progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 5px;
+  transition: width 0.1s linear;
+}
+
+.brat-overlay .brat2-words {
+  display: inline;
+}
+
+.brat-overlay .brat2-w {
+  display: inline-block;
+  visibility: hidden;
+  transition: opacity 0.28s ease, transform 0.28s ease;
+}
+
+.brat-overlay .brat2-w.sung {
+  visibility: visible;
+  opacity: 1;
+}
+
+.brat-overlay .brat2-w.now {
+  visibility: visible;
+  opacity: 1;
+  animation: brat2-pop 0.13s cubic-bezier(0.2, 0.6, 0.3, 1);
+}
+
+@keyframes brat2-pop {
+  from { transform: scale(0.6); }
+  to { transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brat-overlay .brat-line,
+  .brat-overlay .brat-next {
+    animation: none;
+  }
+  .brat-overlay .brat2-w {
+    visibility: hidden;
+    opacity: 1;
+  }
+  .brat-overlay .brat2-w.sung,
+  .brat-overlay .brat2-w.now {
+    visibility: visible;
+    animation: none;
+  }
+}
+
+/* ─── AMBIENT LYRICS (canvasAmbient2 — Apple Music-style tumbler) ─── */
+.amb-lyrics {
+  position: absolute;
+  inset: 0 5% 0 50%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding-left: 0%;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 5;
+}
+
+.amb-tumbler {
+  height: 100%;
+  width: 100%;
+  display: grid;
+  /* Current line rides above center — larger bottom slot. */
+  grid-template-rows: 1fr auto 2fr;
+  max-width: 100%;
+  /* Single composited layer so the glide + leaving overlay never seam. */
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+/* Spacer slots lock the current line to the vertical middle. */
+.amb-slot {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.amb-top {
+  justify-content: flex-end;
+  padding-bottom: clamp(40px, 2.5cqw, 40px);
+  gap: clamp(40px, 2.5cqw, 40px);
+}
+
+.amb-bottom {
+  justify-content: flex-start;
+  padding-top: clamp(40px, 2.5cqw, 40px);
+  gap: clamp(40px, 2.5cqw, 40px);
+  /* Dissolve the bottom frame — lines fade out instead of clipping. */
+  -webkit-mask-image: linear-gradient(to bottom, black 55%, transparent 98%);
+  mask-image: linear-gradient(to bottom, black 55%, transparent 98%);
+}
+
+.amb-line {
+  margin: 0;
+  text-align: left;
+  font-family: 'Inter', -apple-system, 'SF Pro Display', 'Segoe UI', sans-serif;
+  text-wrap: balance;
+  transition: color 0.55s ease, opacity 0.55s ease;
+  animation: amb-in 0.45s ease-out;
+}
+
+/* The outgoing line simply unmounts — only the incoming current (and any
+   fresh next arrivals) animate, rising from just below its slot. */
+.amb-current-wrap {
+  position: relative;
+}
+
+.amb-current {
+  font-size: clamp(28px, 3.2cqw, 38px);
+  font-weight: 800;
+  line-height: 1.15;
+  color: #fff;
+
+}
+
+.amb-next {
+  font-size: clamp(24px, 2.2cqw, 32px);
+  font-weight: 750;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* Narrow canvases stack: card centers above, lyrics bottom-center overlay
+   (matches the shader, which centers the card when uAspect < 1). */
+@container (max-width: 700px) {
+  .amb-lyrics {
+    inset: auto 0 5% 0;
+    align-items: flex-end;
+    justify-content: center;
+    padding-left: 0;
+  }
+
+  .amb-tumbler {
+    height: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: clamp(6px, 1.5cqw, 12px);
+    max-width: 80%;
+    /* Lift the stack so current sits above center. */
+    padding-bottom: 18%;
+  }
+
+  .amb-slot {
+    display: contents;
+  }
+
+  .amb-line {
+    text-align: center;
+  }
+}
+
+@keyframes amb-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes amb-leave-rise {
+  to {
+    transform: translateY(-60%);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .amb-leaving,
+  .amb-slide,
+  .amb-line {
+    animation: none;
+    transition: none;
+  }
+}
+
+/* ─── NOW PLAYING legibility on any art tint (CSS-only) ───
+   The box background itself stays fully opaque and dimmed; inner
+   controls below are flat opaque mixes against --apb-g3 (no
+   transparent glass washes). Fallbacks assume the dark cascade
+   (which wins ties); sampled --apb-* vars override them. */
+
+/* Card EQ bars are gone from this card (pill dots live on the
+   fullscreen pill); the element is aria-hidden so nothing is lost. */
+.audio-player-box .apb-eq {
+  display: none;
+}
+
+/* Focus ring must read on lime tints too. */
+.audio-player-box .apb-track:focus-visible {
+  outline-color: var(--apb-ink, #c3f588);
+}
+
+/* Progress: flat opaque ink-on-g3 track, dim accent fill, permanent thumb. */
+.audio-player-box .apb-bar {
+  background: color-mix(in srgb, var(--apb-ink, #f4f6f8) 22%, var(--apb-g3, #202126));
+  overflow: visible;
+}
+
+.audio-player-box .apb-fill {
+  position: relative;
+}
+
+.audio-player-box .apb-fill::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  transform: translate(50%, -50%);
+  background: var(--apb-ink, #f4f6f8);
+  box-shadow: 0 0 0 2px var(--apb-g3, #202126), 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+
+/* One button family: 10px radii, solid primary, flat opaque secondaries. */
+.audio-player-box .apb-transport .xp-btn {
+  border-radius: 10px;
+}
+
+.audio-player-box .apb-transport .xp-btn:not(.primary) {
+  background: color-mix(in srgb, var(--apb-ink, #f4f6f8) 16%, var(--apb-g3, #202126));
+  border-color: transparent;
+  color: var(--apb-ink, #f4f6f8);
+  box-shadow: none;
+}
+
+.audio-player-box .apb-transport .xp-btn:not(.primary):hover {
+  background: color-mix(in srgb, var(--apb-ink, #f4f6f8) 26%, var(--apb-g3, #202126));
+  border-color: transparent;
+  filter: none;
+}
+
+/* Quiet volume cluster: chromeless row, monochrome slider. */
+.audio-player-box .apb-volume {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.audio-player-box .apb-mute-btn {
+  width: 24px;
+  height: 24px;
+}
+
+.audio-player-box .apb-mute-btn:hover {
+  background: color-mix(in srgb, var(--apb-ink, #f4f6f8) 12%, transparent);
+}
+
+.audio-player-box input[type="range"]::-webkit-slider-runnable-track {
+  background: color-mix(in srgb, var(--apb-ink, #f4f6f8) 22%, transparent);
+}
+
+.audio-player-box input[type="range"]::-moz-range-track {
+  background: color-mix(in srgb, var(--apb-ink, #f4f6f8) 22%, transparent);
+}
+
+.audio-player-box input[type="range"]::-moz-range-progress {
+  background: var(--apb-ink, #f4f6f8);
+}
+
+.audio-player-box input[type="range"]::-webkit-slider-thumb {
+  background: #fff;
+  border: 1px solid var(--apb-ink, #f4f6f8);
+}
+
+.audio-player-box input[type="range"]::-moz-range-thumb {
+  background: #fff;
+  border: 1px solid var(--apb-ink, #f4f6f8);
+}
+
+/* % label: collapsed until actively dragging (or keyboard-focused). */
+.audio-player-box .apb-vol-val {
+  max-width: 0;
+  min-width: 0;
+  opacity: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  transition: max-width 0.2s ease, opacity 0.2s ease;
+}
+
+.audio-player-box .apb-volume-slider:active ~ .apb-vol-val,
+.audio-player-box .apb-volume:focus-within .apb-vol-val {
+  max-width: 44px;
+  min-width: 34px;
+  opacity: 1;
+}
+
+/* ═══ SIDE PANEL POLISH — flat dark inspector ═════════════════════════
+   Appended last so every rule wins the earlier light, overhaul, and
+   MiniCorp-dark generations.
+   1. Audio source & Visualizer surfaces flatten: no nested boxes, only
+      hairline separators between rows.
+   2. Collapsed panel pulls its children out of the tab order.
+   3. Touch & motion additions.
+*/
+
+/* 1. Audio source: flat rows on the panel surface. */
+.audio-source-group .ctrl-group-body-inner {
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  margin: 0;
+  padding: 4px 12px 14px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.audio-source-group .spotify-user,
+.audio-source-group .spotify-track-list,
+.audio-source-group .spotify-empty {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.audio-source-group .spotify-user {
+  margin: 0;
+  padding: 2px 0 10px;
+  border-bottom: 1px solid var(--panel-line);
+}
+
+.audio-source-group .xp-btn.primary.spotify-connect-btn {
+  width: 100%;
+  justify-content: center;
+}
+
+.audio-connect-hint {
+  margin: -2px 0 2px;
+}
+
+/* 2b. Visualizer engine: sliders & brat rows lose their boxes. */
+.visualizer-group .ctrl-group-body-inner {
+  gap: 4px;
+}
+
+.visualizer-group .sliders-container {
+  padding: 2px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+}
+
+.visualizer-group .ctrl-row {
+  padding: 0;
+}
+
+.visualizer-group .ctrl-row + .ctrl-row {
+  border-top-color: var(--panel-line);
+}
+
+.visualizer-group .brat-bg-toggle {
+  margin: 0;
+  padding: 8px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.visualizer-group .brat-bg-toggle + .brat-bg-toggle {
+  border-top: 1px solid var(--panel-line);
+}
+
+/* 2. Collapse must remove children from the tab order. */
+.control-panel.collapsed .control-panel-scroll,
+.control-panel.collapsed .panel-footer {
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+  transition: opacity var(--panel-dur) ease, visibility 0s linear var(--panel-dur);
+}
+
+.control-panel:not(.collapsed) .control-panel-scroll,
+.control-panel:not(.collapsed) .panel-footer {
+  visibility: visible;
+  transition: opacity var(--panel-dur) ease, visibility 0s;
+}
+
+/* 3. Touch & motion. */
+@media (prefers-reduced-motion: reduce) {
+  .control-panel.collapsed .control-panel-scroll,
+  .control-panel.collapsed .panel-footer,
+  .control-panel:not(.collapsed) .control-panel-scroll,
+  .control-panel:not(.collapsed) .panel-footer {
+    transition: opacity 0.01ms linear, visibility 0s linear;
+  }
+}

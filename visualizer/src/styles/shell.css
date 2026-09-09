@@ -1,0 +1,417 @@
+/* ─── WINDOW CONTAINER ─── */
+.xp-window {
+  width: min(1680px, 98vw);
+  height: min(840px, 96dvh);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.02) 30%, rgba(255, 255, 255, 0.005) 55%, rgba(255, 255, 255, 0.03) 100%),
+    rgba(244, 244, 246, 0.295);
+  backdrop-filter: saturate(2.4) blur(60px) brightness(1.08) contrast(1.05);
+  -webkit-backdrop-filter: saturate(2.4) blur(60px) brightness(1.08) contrast(1.05);
+
+  border-radius: 12px;
+  box-shadow: none;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  transition: width 0.3s cubic-bezier(0.2, 0.9, 0.3, 1), height 0.3s cubic-bezier(0.2, 0.9, 0.3, 1), transform 0.3s ease;
+}
+
+/* Window glass pseudo-layers removed: no sheen, vignette, or reflection
+   may sit over the visualizer stage — presets render pure. */
+
+/* Fullscreen Mode */
+.xp-window.fullscreen {
+  width: 100vw !important;
+  height: 100vh !important;
+  top: 0 !important;
+  left: 0 !important;
+  transform: none !important;
+  border-radius: 0 !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* Mini Player Mode */
+.xp-window.mini-player {
+  width: min(420px, 94vw);
+  height: 250px;
+  border-radius: 8px;
+}
+
+.xp-window.mini-player .menu-bar,
+.xp-window.mini-player .control-panel,
+.xp-window.mini-player .status-bar {
+  display: none !important;
+}
+
+/* ─── WINDOW CHROME (one continuous translucent material) ─── */
+.window-chrome {
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.03));
+  backdrop-filter: saturate(2) blur(28px);
+  -webkit-backdrop-filter: saturate(2) blur(28px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.35);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  flex-shrink: 0;
+  position: relative;
+  z-index: 20;
+}
+
+/* ─── TITLE BAR (macOS unified toolbar) ─── */
+.title-bar {
+  height: 44px;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  color: var(--xp-text);
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: 0.1px;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.traffic-lights {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+  width: 60px;
+}
+
+.traffic-light {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 2px rgba(0, 0, 0, 0.15);
+}
+
+.traffic-light.red { background: #FF5F57; }
+.traffic-light.yellow { background: #FEBC2E; }
+.traffic-light.green { background: #28C840; }
+
+.title-bar-text {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  overflow: hidden;
+  color: #000000;
+}
+
+.title-bar-text span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.title-bar-spacer {
+  width: 60px;
+  flex-shrink: 0;
+}
+
+/* ─── MENU BAR & FLYOUT MENUS ─── */
+.menu-bar {
+  height: 30px;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  font-family: var(--font-system);
+  font-size: 12px;
+  flex-shrink: 0;
+  position: relative;
+  /* NOTE: keep overflow visible — .menu-dropdown hangs below the bar and
+     any non-visible overflow-x forces overflow-y to auto, clipping it. */
+  overflow: visible;
+}
+
+.menu-item-wrapper {
+  position: relative;
+}
+
+.menu-item {
+  padding: 3px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-block;
+  color: var(--xp-text);
+  transition: background 0.1s;
+}
+
+.menu-item:hover, .menu-item.active {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+/* Extension status pill — pinned to the right end of the menu bar */
+.menu-ext-wrapper {
+  margin-left: auto;
+}
+
+.menu-ext-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.05);
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  color: var(--xp-text-dim);
+  white-space: nowrap;
+  transition: background 0.1s;
+}
+
+.menu-ext-badge:hover, .menu-ext-badge.active {
+  background: rgba(0, 0, 0, 0.1);
+  color: var(--xp-text);
+}
+
+.menu-ext-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+  box-shadow: 0 0 3px rgba(0, 0, 0, 0.35);
+}
+
+/* Higher specificity than .menu-dropdown (declared later in this file) so
+   left:auto is not overridden back to left:0, which clipped the popover
+   past the window's right edge. */
+.menu-dropdown.menu-ext-popover {
+  left: auto;
+  right: 0;
+  min-width: 290px;
+  max-width: 330px;
+  max-height: min(70vh, 480px);
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.menu-ext-popover .extension-panel {
+  margin-bottom: 0 !important;
+}
+
+@media (max-width: 700px) {
+  .menu-ext-badge .menu-ext-label {
+    display: none;
+  }
+  /* Compress instead of scrolling — a scroll container would clip the
+     absolutely-positioned dropdowns (see .menu-bar note above). */
+  .menu-bar {
+    padding: 0 6px;
+  }
+  .menu-item {
+    padding: 3px 5px;
+  }
+  .shortcut-hint {
+    display: none;
+  }
+}
+
+.menu-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 210px;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: saturate(1.8) blur(20px);
+  -webkit-backdrop-filter: saturate(1.8) blur(20px);
+  border: 1px solid var(--wavi-hairline);
+  border-radius: 10px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18);
+  padding: 4px;
+  z-index: 100;
+  font-size: 12px;
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  color: var(--xp-text);
+  transition: background 0.1s;
+}
+
+.dropdown-item:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.dropdown-item:hover .shortcut-hint {
+  color: var(--xp-text-dim);
+}
+
+.dropdown-item.checked::before {
+  content: "✓ ";
+  font-weight: bold;
+  margin-right: 4px;
+  color: var(--wavi-accent-ink);
+}
+.dropdown-item:hover.checked::before {
+  color: var(--wavi-accent-ink);
+}
+
+.dropdown-divider {
+  height: 1px;
+  background: var(--wavi-hairline);
+  margin: 4px 6px;
+}
+
+.shortcut-hint {
+  font-size: 10px;
+  color: var(--xp-text-dim);
+  margin-left: 14px;
+  font-family: var(--font-mono);
+}
+
+/* Saved-looks section inside the Presets menu dropdown. */
+.menu-section-label {
+  padding: 4px 12px;
+  font-size: 10px;
+  font-weight: bold;
+  color: #666;
+  letter-spacing: 0.5px;
+}
+
+.menu-preset-actions {
+  display: flex;
+  gap: 8px;
+  padding: 2px 8px 6px;
+}
+
+.menu-preset-actions > * {
+  flex: 1;
+  min-height: 30px;
+}
+
+.menu-save-row {
+  display: flex;
+  gap: 8px;
+  padding: 0 8px 6px;
+}
+
+.menu-save-row .xp-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.menu-saved-list {
+  max-height: min(220px, 32vh);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.22) transparent;
+}
+
+.menu-saved-row {
+  gap: 4px;
+  cursor: default;
+}
+
+.menu-saved-load {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.menu-saved-load:focus-visible {
+  outline: 2px solid var(--wavi-accent);
+  outline-offset: -2px;
+}
+
+.menu-saved-del {
+  background: rgba(0, 0, 0, 0.05);
+  border: none;
+  padding: 0;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--xp-text-dim);
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: background var(--panel-dur) ease, color var(--panel-dur) ease;
+}
+
+.menu-saved-del:hover {
+  color: var(--wavi-error-text);
+  background: var(--wavi-error-surface);
+}
+
+.menu-saved-del:focus-visible {
+  outline: 2px solid var(--wavi-accent);
+  outline-offset: -2px;
+}
+
+.menu-saved-empty {
+  padding: 6px 12px 8px;
+  font-size: 12px;
+  color: var(--xp-text-dim);
+}
+
+/* ─── MAIN CONTENT LAYOUT ─── */
+.main-content {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  position: relative;
+  overflow: hidden;
+}
+
+.canvas-wrap {
+  flex: 1;
+  position: relative;
+  background: #020308;
+  overflow: hidden;
+  min-width: 0;
+  container-type: inline-size;
+}
+
+.canvas-wrap canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* Error-boundary fallback: covers the canvas area only, app chrome survives. */
+.scene-error-fallback {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: #020308;
+  color: #fff;
+}
+
+.scene-error-text {
+  margin: 0;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.75);
+}
+

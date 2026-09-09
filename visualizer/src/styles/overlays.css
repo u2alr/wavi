@@ -1,0 +1,341 @@
+/* ─── STATUS BAR ─── */
+.status-bar {
+  height: 26px;
+  background: linear-gradient(to top, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.04));
+  backdrop-filter: saturate(2) blur(28px);
+  -webkit-backdrop-filter: saturate(2) blur(28px);
+  border-top: 1px solid rgba(255, 255, 255, 0.35);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  font-size: 11px;
+  flex-shrink: 0;
+  gap: 12px;
+}
+
+.status-metrics-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.status-section {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 1px 4px;
+  white-space: nowrap;
+  font-size: 10px;
+}
+
+.status-indicator {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.fps-good { background: #00D040; box-shadow: 0 0 4px #00D040; }
+.fps-mid { background: #FFB300; box-shadow: 0 0 4px #FFB300; }
+.fps-low { background: #FF3B30; box-shadow: 0 0 4px #FF3B30; }
+
+.dot-live { background: #00C853; box-shadow: 0 0 4px #00C853; }
+.dot-idle { background: #888888; }
+
+.status-label {
+  color: #666;
+  font-weight: bold;
+}
+
+.status-val {
+  color: #111;
+}
+
+.tabular {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Mini LED Meter */
+.status-meter {
+  width: 28px;
+  height: 6px;
+  background: #CCC7B8;
+  border-radius: 1px;
+  overflow: hidden;
+  display: inline-flex;
+  margin: 0 2px;
+}
+
+.status-meter-fill {
+  height: 100%;
+  transition: width 0.08s ease-out;
+}
+
+.bass-fill { background: linear-gradient(90deg, #FF6B00, #FF0055); }
+.mid-fill { background: linear-gradient(90deg, #00C853, #FFD600); }
+.treble-fill { background: linear-gradient(90deg, #00E5FF, #7C4DFF); }
+.level-fill { background: linear-gradient(90deg, #00E676, #FF9100, #FF1744); }
+
+.status-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  color: #555;
+  white-space: nowrap;
+}
+
+.status-preset-tag strong {
+  color: var(--wavi-accent);
+}
+
+.status-divider {
+  color: #CCC;
+}
+
+/* ─── MODAL DIALOG (ABOUT / SHORTCUTS) ─── */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  animation: fadeIn 0.15s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.xp-dialog {
+  width: 440px;
+  max-width: 92vw;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid var(--wavi-hairline);
+  border-radius: 12px;
+  box-shadow: 0 16px 50px rgba(0,0,0,0.3);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: scaleUp 0.18s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+@keyframes scaleUp {
+  from { transform: scale(0.94); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+.dialog-title-bar {
+  height: 40px;
+  background: transparent;
+  border-bottom: 1px solid var(--wavi-hairline);
+  color: var(--xp-text);
+  font-weight: 600;
+  padding: 0 8px 0 16px;
+}
+
+.dialog-title-bar .title-bar-text {
+  justify-content: flex-start;
+}
+
+.modal-close-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--xp-text-dim);
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-close-btn:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--xp-text);
+}
+
+.dialog-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: var(--wavi-accent);
+  color: var(--wavi-accent-ink);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: bold;
+}
+
+.dialog-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+}
+
+.dialog-header-banner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.dialog-logo {
+  width: 44px;
+  height: 44px;
+  border-radius: 11px;
+  background: var(--wavi-accent);
+  color: var(--wavi-accent-ink);
+  font-size: 24px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.dialog-app-name {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--xp-text);
+}
+
+.dialog-app-desc {
+  margin: 3px 0 0;
+  font-size: 11px;
+  color: var(--xp-text-dim);
+}
+
+.dialog-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--xp-text-dim);
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.shortcuts-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 12px;
+}
+
+.shortcut-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: #333;
+}
+
+.key-badge {
+  background: rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 5px;
+  padding: 2px 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  box-shadow: none;
+}
+
+.dialog-engine-note {
+  margin: 0;
+  font-size: 11px;
+  color: #555;
+  line-height: 1.45;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.dialog-ok-btn {
+  min-width: 80px;
+  padding: 5px 16px;
+}
+
+/* ─── EXTENSION PANEL (shared card language, used in menu popover) ─── */
+.extension-panel {
+  border: 1px solid var(--panel-well-border);
+  border-radius: var(--panel-radius-well);
+  padding: 10px 12px;
+  margin-bottom: 0;
+  background: var(--panel-well);
+}
+
+.extension-panel.is-live {
+  background: linear-gradient(to bottom, #f0f8dd, #e7f3cf);
+  border-color: rgba(110, 160, 0, 0.3);
+}
+
+.extension-panel.is-error {
+  background: var(--wavi-error-surface);
+  border-color: var(--wavi-error-border);
+}
+
+.ext-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ext-panel-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.06);
+}
+
+.ext-panel-label {
+  font-size: 12.5px;
+  font-weight: 650;
+  letter-spacing: -0.005em;
+  flex: 1;
+  line-height: 1.4;
+}
+
+.ext-panel-subtitle {
+  font-size: 11.5px;
+  margin-top: 6px;
+  color: var(--xp-text-dim);
+  line-height: 1.55;
+}
+
+.ext-panel-steps {
+  font-size: 11.5px;
+  margin: 8px 0 2px;
+  padding: 8px 10px 8px 28px;
+  line-height: 1.6;
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(20, 24, 32, 0.1);
+  border-radius: 8px;
+  color: var(--xp-text);
+}
+
+.ext-panel-steps code {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  background: rgba(0, 0, 0, 0.06);
+  padding: 1px 5px;
+  border-radius: 5px;
+}
+

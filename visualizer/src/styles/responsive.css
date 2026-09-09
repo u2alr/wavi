@@ -1,0 +1,80 @@
+/* ─── RESPONSIVE RULES ─── */
+@media (max-width: 860px) {
+  .xp-window {
+    width: 100vw;
+    height: 100dvh;
+    top: 0;
+    left: 0;
+    transform: none;
+    border-radius: 0;
+    border: none;
+  }
+  /* Panel becomes a slide-over drawer so the canvas stays visible */
+  .control-panel {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: min(350px, 92vw);
+    z-index: 40;
+    box-shadow: -12px 0 32px rgba(0, 0, 0, 0.35);
+    transition: transform 0.25s var(--panel-ease), width 0.25s var(--panel-ease);
+  }
+  .control-panel.collapsed {
+    transform: translateX(102%);
+    width: min(350px, 92vw);
+    margin-right: 0;
+  }
+  .shortcuts-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Touch ergonomics: larger hit areas on coarse pointers */
+@media (pointer: coarse) {
+  .xp-btn {
+    min-height: 40px;
+  }
+  .spotify-track {
+    min-height: 54px;
+  }
+  .apb-transport .xp-btn {
+    width: 40px;
+    height: 40px;
+    min-height: 40px;
+  }
+  .apb-transport .xp-btn.primary {
+    width: 46px;
+    height: 46px;
+    min-height: 46px;
+  }
+  .preset-chip .del {
+    width: 30px;
+    height: 30px;
+  }
+  .menu-item {
+    padding: 8px 10px;
+  }
+  .spotify-error-retry,
+  .spotify-error-dismiss {
+    min-height: 32px;
+    min-width: 32px;
+  }
+  .accordion-arrow {
+    min-height: 32px;
+    min-width: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 600px) {
+  .status-meter {
+    display: none;
+  }
+  .status-metrics-group {
+    gap: 4px;
+  }
+}
+

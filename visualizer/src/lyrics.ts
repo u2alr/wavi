@@ -1,5 +1,3 @@
-import { getAccessToken } from './spotify'
-
 export interface LyricWord { text: string; start: number; end: number }
 export interface LyricLine { start: number; end: number; text: string; words?: LyricWord[] }
 export interface TrackMeta { title: string; artist?: string; id?: string; isrc?: string }
@@ -104,103 +102,8 @@ export function parseLRC(lrc: string): LyricLine[] {
   })
 }
 
-/* ------------------------------------------------------------------ */
-/* NetEase karaoke lyrics — true word-level timing in milliseconds     */
-/* ------------------------------------------------------------------ */
-
-const KLINE_RE = /\[(\d+),(\d+)\](.*)/
-const KWORD_RE = /<(\d+),(\d+)>([^<]*)/g
-
-/**
- * NetEase "klyric" format:
- *   [lineStartMs,lineDurMs]<wordStartMs,wordDurMs>字<wordStartMs,wordDurMs>符...
- * Word offsets are relative to the line start.
- */
-export function parseKlyric(klyric: string): LyricLine[] {
-  const lines: LyricLine[] = []
-  for (const raw of klyric.split(/\r?\n/)) {
-    const m = KLINE_RE.exec(raw.trim())
-    if (!m) continue
-    const lineStart = Number(m[1]) / 1000
-    const words: LyricWord[] = []
-    let w: RegExpExecArray | null
-    KWORD_RE.lastIndex = 0
-    while ((w = KWORD_RE.exec(m[3]))) {
-      const start = lineStart + Number(w[1]) / 1000
-      words.push({ text: w[3], start, end: start + Number(w[2]) / 1000 })
-    }
-    if (!words.length) continue
-    lines.push({ start: lineStart, end: 0, text: words.map((x) => x.text).join(''), words })
-  }
-  lines.sort((a, b) => a.start - b.start)
-  for (let i = 0; i < lines.length - 1; i++) lines[i].end = lines[i + 1].start
-  if (lines.length) lines[lines.length - 1].end = lines[lines.length - 1].start + 10
-  return lines
-}
-
-async function tryNetEase(meta: TrackMeta, signal?: AbortSignal): Promise<LyricLine[] | null> {
-  if (!meta.title) return null
-  try {
-    const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9一-鿿]+/g, '')
-    const q = encodeURIComponent(`${meta.artist || ''} ${meta.title}`.trim())
-    const res = await fetch(`https://music.163.com/api/search/get?s=${q}&type=1&limit=5`, { signal })
-    if (!res.ok) return null
-    const songs = (await res.json())?.result?.songs
-    if (!Array.isArray(songs) || !songs.length) return null
-    const want = norm(meta.title)
-    const song = songs.find((s: any) => norm(s.name || '') === want) || songs[0]
-
-    const ly = await (await fetch(
-      `https://music.163.com/api/song/lyric?id=${song.id}&lv=1&kv=1&tv=-1`, { signal }
-    )).json()
-
-    const klyric: string | undefined = ly?.klyric?.lyric
-    if (klyric) {
-      const lines = parseKlyric(klyric)
-      if (lines.length) return lines
-    }
-    const lrc: string | undefined = ly?.lrc?.lyric
-    if (lrc) {
-      const lines = parseLRC(lrc)
-      if (lines.length) return lines
-    }
-    return null
-  } catch { return null /* CORS block / abort */ }
-}
-
-/* ------------------------------------------------------------------ */
-/* Sources                                                             */
-/* ------------------------------------------------------------------ */
-
-async function trySpotify(id?: string, signal?: AbortSignal): Promise<LyricLine[] | null> {
-  if (!id) return null
-  const token = await getAccessToken()
-  if (!token) return null
-  try {
-    const res = await fetch(`https://spclient.wg.spotify.com/color-lyrics/v2/track/${id}?format=json&market=from_token`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'app-platform': 'WebPlayer',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'application/json',
-        'Referer': 'https://open.spotify.com/',
-      },
-      signal,
-    })
-    if (!res.ok) return null
-    const raw = (await res.json())?.lyrics?.lines
-    if (!Array.isArray(raw) || !raw.length) return null
-
-    const lines: LyricLine[] = raw.map((l: any) => ({
-      start: parseInt(l.startTimeMs || '0', 10) / 1000,
-      end: 0,
-      text: l.words || '',
-    }))
-    for (let i = 0; i < lines.length - 1; i++) lines[i].end = lines[i + 1].start
-    if (lines.length) lines[lines.length - 1].end = lines[lines.length - 1].start + 10
-    return lines
-  } catch { return null }
-}
+/* Sources — LRCLib only. NetEase sends no CORS headers and spclient
+   rejects user OAuth tokens, so both are unreachable from the browser. */
 
 async function tryLrclib(meta: TrackMeta, signal?: AbortSignal): Promise<{ lines: LyricLine[]; synced: boolean } | null> {
   const urls = []
@@ -234,29 +137,9 @@ export async function fetchLyrics(meta: TrackMeta, signal?: AbortSignal): Promis
     }
   } catch { /* fall through to network */ }
 
-  const hasWordTiming = (lines: LyricLine[]) => lines.some((l) => l.words?.length)
-
-  // Try Spotify + LRCLib in parallel. Prefer word-level timing over plain line timing.
-  const [sp, lr] = await Promise.all([trySpotify(meta.id, signal), tryLrclib(meta, signal)])
-
-  let best: { lines: LyricLine[]; source: string; synced: boolean } | null = null
-  for (const c of [
-    sp && { lines: sp, source: 'spotify', synced: true },
-    lr && { lines: lr.lines, source: 'lrclib', synced: lr.synced },
-  ].filter((c): c is NonNullable<typeof c> => Boolean(c))) {
-    if (!best) { best = c; continue }
-    const cScore = (hasWordTiming(c.lines) ? 2 : 0) + (c.synced ? 1 : 0)
-    const bScore = (hasWordTiming(best.lines) ? 2 : 0) + (best.synced ? 1 : 0)
-    if (cScore > bScore) best = c
-  }
-
-  // NetEase fills gaps (esp. non-Western catalog) and beats unsynced LRCLib results.
-  if (!best || !hasWordTiming(best.lines)) {
-    const ne = await tryNetEase(meta, signal)
-    if (ne && (!best || !hasWordTiming(best.lines))) best = { lines: ne, source: 'netease', synced: true }
-  }
-
-  if (!best) return null
+  const lr = await tryLrclib(meta, signal)
+  if (!lr) return null
+  const best = { lines: lr.lines, source: 'lrclib', synced: lr.synced }
   writeLyricCache(key, best)
   return best
 }

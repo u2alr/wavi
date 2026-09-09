@@ -4,11 +4,31 @@ import type { SpotifyPlaylist, SpotifyTrack, SpotifyUser } from './spotify'
 export interface PresetParams {
   intensity: number
   sensitivity: number
+  bassAmp: number
+  midAmp: number
+  trebleAmp: number
   hueShift: number
   speed: number
-  particleSize: number
   complexity: number
-  thickness: number
+}
+
+export type PresetParamKey = keyof PresetParams
+
+// Which sliders actually do something, per preset (read from the shader
+// uniform writes in Scene.tsx — anything not listed here stays hidden).
+export const PRESET_PARAM_KEYS: Record<string, PresetParamKey[]> = {
+  mellow2: ['intensity', 'sensitivity', 'hueShift', 'speed', 'complexity'],
+  auroraSilk: ['intensity', 'sensitivity', 'hueShift', 'speed', 'complexity'],
+  mellow1: ['intensity', 'sensitivity', 'hueShift', 'speed', 'complexity'],
+  prismaticTempest: ['intensity', 'sensitivity', 'hueShift', 'speed', 'complexity'],
+  acidWash: ['intensity', 'sensitivity', 'hueShift', 'speed', 'complexity'],
+  chromaticBurst: ['intensity', 'sensitivity', 'hueShift', 'speed'],
+  waveform: ['sensitivity', 'speed'],
+  amPreset: ['sensitivity', 'speed'],
+  am2Preset: ['sensitivity', 'speed', 'bassAmp', 'midAmp', 'trebleAmp'],
+  canvasAmbient: ['sensitivity', 'speed'],
+  canvasAmbient2: ['speed'],
+  brat: [],
 }
 
 // Old preset ids renamed in the "rename the presets" pass. URLs/saved presets
@@ -50,7 +70,8 @@ export interface VisualizerMetrics {
 
 interface Store {
   currentPreset: string
-  params: PresetParams
+  // Per-preset overrides (sparse — anything missing falls back to defaults).
+  presetParams: Record<string, Partial<PresetParams>>
   playlist: File[]
   currentTrackIndex: number
   trackName: string
@@ -63,6 +84,7 @@ interface Store {
   spotifyIndex: number
   spotifyPlaying: boolean
   spotifyCurrentTrack: SpotifyTrack | null
+  spotifyError: string | null
   playbackPosition: number
   playbackDuration: number
   metrics: VisualizerMetrics
@@ -91,9 +113,11 @@ interface Store {
   setSpotifyUser: (u: SpotifyUser | null) => void
   setSpotifyPlaylists: (p: SpotifyPlaylist[]) => void
   setSpotifyTracks: (t: SpotifyTrack[]) => void
+  appendSpotifyTracks: (t: SpotifyTrack[]) => void
   setSpotifyIndex: (i: number) => void
   setSpotifyPlaying: (b: boolean) => void
   setSpotifyCurrentTrack: (t: SpotifyTrack | null) => void
+  setSpotifyError: (e: string | null) => void
   setPlaybackProgress: (position: number, duration: number) => void
   setMetrics: (metrics: VisualizerMetrics) => void
   savePreset: (name: string) => void
@@ -109,11 +133,20 @@ interface Store {
 const DEFAULT_PARAMS: PresetParams = {
   intensity: 1.5,
   sensitivity: 1,
+  bassAmp: 1,
+  midAmp: 1,
+  trebleAmp: 1,
   hueShift: 200,
   speed: 1.0,
-  particleSize: 0.03,
   complexity: 1,
-  thickness: 1,
+}
+
+/** Effective params for a preset: defaults + that preset's overrides. */
+export function presetParamsFor(
+  s: { currentPreset: string; presetParams: Record<string, Partial<PresetParams>> },
+  id = s.currentPreset,
+): PresetParams {
+  return { ...DEFAULT_PARAMS, ...s.presetParams[id] }
 }
 
 function loadSavedPresets(): SavedPreset[] {
@@ -133,7 +166,7 @@ function persistPresets(presets: SavedPreset[]) {
 
 export const useStore = create<Store>((set, get) => ({
   currentPreset: 'mellow2',
-  params: { ...DEFAULT_PARAMS },
+  presetParams: {},
   playlist: [],
   currentTrackIndex: -1,
   trackName: '',
@@ -144,6 +177,7 @@ export const useStore = create<Store>((set, get) => ({
   spotifyIndex: -1,
   spotifyPlaying: false,
   spotifyCurrentTrack: null,
+  spotifyError: null,
   playbackPosition: 0,
   playbackDuration: 0,
   metrics: { fps: 0, bass: 0, mid: 0, treble: 0, overall: 0, sourceMode: 'idle' as const },
@@ -159,9 +193,19 @@ export const useStore = create<Store>((set, get) => ({
   extensionStatus: '' as '' | 'EXT LIVE' | 'EXT SILENT' | 'EXT READY' | 'EXT ERROR',
 
   setCurrentPreset: (p) => set({ currentPreset: p }),
-  setParam: (key, value) => set((s) => ({ params: { ...s.params, [key]: value } })),
-  setParams: (p) => set({ params: p }),
-  resetParams: () => set({ params: { ...DEFAULT_PARAMS } }),
+  setParam: (key, value) =>
+    set((s) => ({
+      presetParams: {
+        ...s.presetParams,
+        [s.currentPreset]: { ...s.presetParams[s.currentPreset], [key]: value },
+      },
+    })),
+  setParams: (p) =>
+    set((s) => ({ presetParams: { ...s.presetParams, [s.currentPreset]: { ...p } } })),
+  resetParams: () =>
+    set((s) => ({
+      presetParams: { ...s.presetParams, [s.currentPreset]: { ...DEFAULT_PARAMS } },
+    })),
   setPlaylist: (files) => set({ playlist: files }),
   setCurrentTrackIndex: (i) => set({ currentTrackIndex: i }),
   setIsFullscreen: (fs) => set({ isFullscreen: fs }),
@@ -173,6 +217,8 @@ export const useStore = create<Store>((set, get) => ({
   setSpotifyUser: (u) => set({ spotifyUser: u }),
   setSpotifyPlaylists: (p) => set({ spotifyPlaylists: p }),
   setSpotifyTracks: (t) => set({ spotifyTracks: t, spotifyIndex: t.length ? 0 : -1 }),
+  appendSpotifyTracks: (t) => set((s) => ({ spotifyTracks: [...s.spotifyTracks, ...t] })),
+  setSpotifyError: (e) => set({ spotifyError: e }),
   setSpotifyIndex: (i) => set({ spotifyIndex: i }),
   setSpotifyPlaying: (b) => set({ spotifyPlaying: b }),
   setSpotifyCurrentTrack: (t) => set({ spotifyCurrentTrack: t }),
@@ -186,12 +232,12 @@ export const useStore = create<Store>((set, get) => ({
   setExtensionStatus: (s) => set({ extensionStatus: s }),
 
   savePreset: (name) => {
-    const { currentPreset, params, savedPresets } = get()
+    const { currentPreset, savedPresets } = get()
     const newPreset: SavedPreset = {
       id: crypto.randomUUID(),
       name,
       presetType: currentPreset,
-      params: { ...params },
+      params: presetParamsFor(get()),
       createdAt: Date.now(),
     }
     const updated = [...savedPresets, newPreset]
@@ -202,7 +248,10 @@ export const useStore = create<Store>((set, get) => ({
   loadPreset: (id) => {
     const preset = get().savedPresets.find((p) => p.id === id)
     if (preset) {
-      set({ currentPreset: preset.presetType, params: { ...DEFAULT_PARAMS, ...preset.params } })
+      set((s) => ({
+        currentPreset: preset.presetType,
+        presetParams: { ...s.presetParams, [preset.presetType]: { ...preset.params } },
+      }))
     }
   },
 

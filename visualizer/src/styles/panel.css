@@ -1,0 +1,373 @@
+/* ─── SIDEBAR / CONTROL PANEL — refined glass cards ─── */
+.control-panel {
+  width: 372px;
+  height: 100%;
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.01));
+  backdrop-filter: saturate(2.2) blur(40px);
+  -webkit-backdrop-filter: saturate(2.2) blur(40px);
+  border-left: 1px solid rgba(255, 255, 255, 0.22);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  flex-shrink: 0;
+  transition: width 0.25s var(--panel-ease), margin-right 0.25s var(--panel-ease), transform 0.25s var(--panel-ease);
+  z-index: 15;
+}
+
+.control-panel.collapsed {
+  width: 0;
+  margin-right: 0;
+  border-left-color: transparent;
+  overflow: visible;
+}
+
+.control-panel.collapsed .control-panel-scroll,
+.control-panel.collapsed .panel-footer {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Fullscreen overlay: panel floats above the canvas instead of squeezing it.
+   Canvas keeps full size; collapsed slides out to the right. */
+.xp-window.fullscreen .control-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  height: 100%;
+  z-index: 30;
+  box-shadow: -20px 0 60px rgba(0, 0, 0, 0.45);
+}
+
+.xp-window.fullscreen .control-panel.collapsed {
+  width: 372px;
+  margin-right: 0;
+  transform: translateX(100%);
+}
+
+/* (BETA) badge — kept standalone; the Karaoke row uses it */
+.panel-header-sub {
+  font-size: 12px;
+  font-weight: 520;
+  line-height: 1.25;
+  color: var(--panel-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+  padding-left: 4px;
+}
+
+.control-panel-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 2px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  transition: opacity 0.2s ease;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.22) transparent;
+  scrollbar-gutter: stable;
+}
+
+.control-panel-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.control-panel-scroll::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+.control-panel-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Card sections — overflow-x:clip keeps every child exactly inside the
+   border (the scroll container clips 10px further out, which is what let
+   bleed straddle the edge). clip (unlike hidden) leaves overflow-y alone
+   so the dropdown popovers still escape downward. */
+.ctrl-group {
+  position: relative;
+  background: var(--panel-card);
+  border: 1px solid var(--panel-card-border);
+  border-radius: 12px;
+  box-shadow: var(--panel-card-shadow);
+  padding: 3px 9px 9px;
+  overflow-x: clip;
+}
+
+.ctrl-group:last-child {
+  margin-bottom: 2px;
+}
+
+.ctrl-group-header {
+  padding: 4px 0 6px;
+  background: none;
+  border-bottom: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 7px;
+  cursor: pointer;
+  user-select: none;
+  min-height: 28px;
+}
+
+/* Keyboard operability for accordion headers (role=button in JSX) */
+.ctrl-group-header:focus-visible {
+  outline: 2px solid var(--wavi-accent);
+  outline-offset: -2px;
+  border-radius: 8px;
+}
+
+.ctrl-group-eyebrow-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ctrl-group-count {
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--xp-text-dim);
+  background: var(--panel-well);
+  border: 1px solid var(--panel-well-border);
+  border-radius: 999px;
+  padding: 1px 7px;
+  line-height: 1.5;
+  flex-shrink: 0;
+}
+
+/* Legibility without text-shadow hacks — cards are opaque enough */
+.field-label,
+.ctrl-row label,
+.menu-item,
+.status-label,
+.status-val {
+  text-shadow: none;
+}
+
+/* Toast docked to panel top */
+.xp-toast-region {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  top: 56px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: stretch;
+  z-index: 200;
+  pointer-events: none;
+}
+
+.xp-toast {
+  font-family: var(--font-system);
+  font-size: 12.5px;
+  font-weight: 550;
+  letter-spacing: -0.005em;
+  color: #fff;
+  background: rgba(20, 24, 32, 0.9);
+  backdrop-filter: saturate(1.6) blur(16px);
+  -webkit-backdrop-filter: saturate(1.6) blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 12px;
+  padding: 9px 14px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  opacity: 0;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  max-width: 100%;
+  text-align: left;
+}
+
+.xp-toast.show {
+  opacity: 1;
+  transform: translateY(2px);
+}
+
+.xp-toast.error {
+  background: rgba(120, 20, 20, 0.92);
+  border-color: rgba(255, 255, 255, 0.25);
+  color: #ffe9e9;
+}
+
+.ctrl-group-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--xp-text-dim);
+  letter-spacing: 0.08em;
+  text-shadow: none;
+  transition: color 0.2s ease;
+  white-space: nowrap;
+}
+
+.ctrl-group.open .ctrl-group-title {
+  color: var(--xp-text);
+}
+
+.accordion-arrow {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: var(--xp-text-dim);
+  transition: transform 0.22s var(--panel-ease), background var(--panel-dur) ease;
+  flex-shrink: 0;
+}
+
+.ctrl-group-header:hover .accordion-arrow {
+  background: var(--panel-hover);
+  color: var(--xp-text);
+}
+
+.ctrl-group.open .accordion-arrow {
+  transform: rotate(90deg);
+}
+
+.ctrl-group-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.24s var(--panel-ease);
+}
+
+.ctrl-group.open .ctrl-group-body {
+  grid-template-rows: 1fr;
+}
+
+.ctrl-group-body > * {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.ctrl-group.open .ctrl-group-body > * {
+  overflow: visible;
+}
+
+.ctrl-group.open {
+  z-index: 5;
+}
+
+.ctrl-group-body-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 0;
+}
+
+.reset-row {
+  margin-top: 2px;
+  display: flex;
+  justify-content: flex-start;
+}
+
+/* Shared layout utilities — replaces ad-hoc inline flex styles */
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.preset-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 0;
+}
+
+.preset-actions > * {
+  flex: 1;
+  min-height: 30px;
+}
+
+.field-block {
+  width: 100%;
+  margin-bottom: 2px;
+}
+
+.field-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.search-clear {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--xp-text-dim);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  flex-shrink: 0;
+  font-size: 13px;
+  transition: background var(--panel-dur) ease, color var(--panel-dur) ease;
+}
+
+.search-clear:hover {
+  color: var(--xp-text);
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.search-clear svg,
+.spotify-error-dismiss svg {
+  display: block;
+}
+
+/* Visually-hidden but screen-reader-accessible label */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Flex utilities */
+.flex-1 {
+  flex: 1;
+  min-width: 0;
+}
+
+.spacer {
+  flex: 1;
+}
+
+/* Loading spinner */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loading-indicator {
+  width: 24px;
+  height: 24px;
+  border: 2.5px solid var(--wavi-hairline);
+  border-top-color: var(--wavi-accent);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  flex-shrink: 0;
+}
+

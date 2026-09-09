@@ -13,6 +13,8 @@ export default function PanelSelect({
   ariaLabel,
   disabled = false,
   id,
+  searchable = false,
+  searchPlaceholder = 'Search...',
 }: {
   value: string
   options: PanelOption[]
@@ -21,12 +23,17 @@ export default function PanelSelect({
   ariaLabel: string
   disabled?: boolean
   id?: string
+  searchable?: boolean
+  searchPlaceholder?: string
 }) {
   const [open, setOpen] = useState(false)
   const [activeIndex, setActiveIndex] = useState(0)
+  const [query, setQuery] = useState('')
   const rootRef = useRef<HTMLDivElement>(null)
   const listId = useId()
   const selected = options.find((o) => o.value === value) ?? null
+  const q = query.trim().toLowerCase()
+  const visible = q ? options.filter((o) => o.label.toLowerCase().includes(q)) : options
 
   useEffect(() => {
     if (!open) return
@@ -52,6 +59,7 @@ export default function PanelSelect({
   const openMenu = () => {
     const idx = options.findIndex((o) => o.value === value)
     setActiveIndex(idx >= 0 ? idx : 0)
+    setQuery('')
     setOpen(true)
   }
 
@@ -66,13 +74,14 @@ export default function PanelSelect({
   const onListKey = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') {
       e.preventDefault()
-      setActiveIndex((i) => (i + 1) % options.length)
+      setActiveIndex((i) => (i + 1) % visible.length)
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
-      setActiveIndex((i) => (i - 1 + options.length) % options.length)
+      setActiveIndex((i) => (i - 1 + visible.length) % visible.length)
     } else if (e.key === 'Enter' || e.key === ' ') {
+      if ((e.target as HTMLElement).tagName === 'INPUT' && e.key === ' ') return
       e.preventDefault()
-      const opt = options[activeIndex]
+      const opt = visible[activeIndex]
       if (opt) commit(opt.value)
     }
   }
@@ -110,12 +119,27 @@ export default function PanelSelect({
           className="panel-select-popover"
           onKeyDown={onListKey}
         >
-          {options.length === 0 && (
-            <div className="panel-select-empty" aria-disabled="true">
-              No options yet
+          {searchable && (
+            <div className="panel-select-search">
+              <input
+                type="search"
+                autoFocus
+                value={query}
+                onChange={(e) => {
+                  setQuery(e.target.value)
+                  setActiveIndex(0)
+                }}
+                placeholder={searchPlaceholder}
+                aria-label={searchPlaceholder}
+              />
             </div>
           )}
-          {options.map((opt, i) => {
+          {visible.length === 0 && (
+            <div className="panel-select-empty" aria-disabled="true">
+              {options.length === 0 ? 'No options yet' : 'No matches'}
+            </div>
+          )}
+          {visible.map((opt, i) => {
             const isSelected = opt.value === value
             return (
               <div

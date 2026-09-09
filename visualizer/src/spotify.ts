@@ -195,8 +195,9 @@ export class SpotifyApiError extends Error {
 export async function spotifyApi<T>(path: string, init?: RequestInit): Promise<T> {
   const token = await getAccessToken()
   if (!token) throw new Error('Not authenticated with Spotify')
+  const url = path.startsWith('http') ? path : `https://api.spotify.com/v1${path}`
   const send = (t: string) =>
-    fetch(`https://api.spotify.com/v1${path}`, {
+    fetch(url, {
       ...init,
       headers: { Authorization: `Bearer ${t}`, ...(init?.headers ?? {}) },
     })
@@ -297,14 +298,57 @@ export async function getUserPlaylists(limit = 50): Promise<SpotifyPlaylist[]> {
   return data.items ?? []
 }
 
-export async function getPlaylistTracks(playlistId: string, limit = 50): Promise<SpotifyTrack[]> {
-  const data = await spotifyApi<{
-    items: { item?: SpotifyTrack | null; track?: SpotifyTrack | null }[]
-    next: string | null
-  }>(`/playlists/${playlistId}/items?limit=${limit}`)
-  return data.items
+interface PlaylistItemsPage {
+  items: { item?: SpotifyTrack | null; track?: SpotifyTrack | null }[]
+  total: number
+  next: string | null
+}
+
+function cleanPlaylistItems(
+  items: PlaylistItemsPage['items'],
+): SpotifyTrack[] {
+  return items
     .map((item) => item.item ?? item.track ?? null)
     .filter((t): t is SpotifyTrack => !!t)
+}
+
+/** One page of a playlist's tracks, plus the playlist total. */
+export async function getPlaylistTracksPage(
+  playlistId: string,
+  offset = 0,
+  pageSize = 100,
+): Promise<{ tracks: SpotifyTrack[]; total: number }> {
+  const data = await spotifyApi<PlaylistItemsPage>(
+    `/playlists/${playlistId}/items?limit=${pageSize}&offset=${offset}`,
+  )
+  return { tracks: cleanPlaylistItems(data.items), total: data.total ?? 0 }
+}
+
+/**
+ * Full track list for a playlist (paged, capped at `max`). The first page
+ * returns fast; remaining pages load concurrently so big playlists don't
+ * pay sequential round-trips.
+ */
+export async function getPlaylistTracks(
+  playlistId: string,
+  max = 500,
+): Promise<{ tracks: SpotifyTrack[]; total: number }> {
+  const pageSize = 100
+  const first = await getPlaylistTracksPage(playlistId, 0, pageSize)
+  const want = Math.min(first.total || first.tracks.length, max)
+  if (first.tracks.length >= want) {
+    return { tracks: first.tracks.slice(0, want), total: first.total }
+  }
+  const pages = Math.ceil((want - first.tracks.length) / pageSize)
+  const rest = await Promise.all(
+    Array.from({ length: pages }, (_, k) =>
+      getPlaylistTracksPage(playlistId, (k + 1) * pageSize, pageSize),
+    ),
+  )
+  return {
+    tracks: [...first.tracks, ...rest.flatMap((p) => p.tracks)].slice(0, want),
+    total: first.total,
+  }
 }
 
 const CATALOG_BLOCKED_MESSAGE =

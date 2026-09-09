@@ -1,0 +1,628 @@
+/* Spotify Streaming Panel — card-native */
+.spotify-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  background: var(--panel-well);
+  border: 1px solid var(--panel-well-border);
+  border-radius: var(--panel-radius-well);
+  padding: 7px 8px 7px 7px;
+  margin-bottom: 2px;
+}
+
+.spotify-disconnect {
+  background: rgba(0, 0, 0, 0.05);
+  border: 1px solid transparent;
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--xp-text-dim);
+  text-decoration: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background var(--panel-dur) ease, color var(--panel-dur) ease;
+}
+
+.spotify-disconnect:hover {
+  background: rgba(0, 0, 0, 0.09);
+  color: var(--xp-text);
+}
+
+/* Shared lime focus ring for remaining small controls */
+.spotify-disconnect:focus-visible,
+.spotify-error-retry:focus-visible,
+.spotify-error-dismiss:focus-visible,
+.menu-ext-badge:focus-visible {
+  outline: 2px solid var(--wavi-accent);
+  outline-offset: -2px;
+}
+
+.spotify-avatar {
+  width: 28px !important;
+  height: 28px !important;
+  max-width: 28px !important;
+  max-height: 28px !important;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  display: block;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+
+.spotify-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--xp-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.spotify-panel {
+  margin-top: 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.spotify-auth-bar {
+  margin-bottom: 2px;
+}
+
+.spotify-connect-btn {
+  width: 100%;
+  min-height: 34px;
+}
+
+/* Official combo: green logo only on black. Beats theme primary rules. */
+.xp-btn.primary.spotify-connect-btn {
+  color: #fff;
+
+  background: #1914143f;
+
+}
+
+.xp-btn.primary.spotify-connect-btn:hover {
+  background: #2b2220;
+}
+
+.spotify-playlist-row {
+  display: flex;
+  gap: 5px;
+  margin: 0;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.spotify-reload-btn {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  padding: 0;
+  min-height: 32px;
+}
+
+.spotify-reload-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Custom dropdown — themed replacement for native selects */
+.panel-select {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  overflow: visible;
+  border-radius: 10px;
+}
+
+.field-wrap .panel-select {
+  width: 100%;
+}
+
+.spotify-playlist-row .panel-select {
+  flex: 1;
+  min-width: 0;
+}
+
+.panel-select-trigger {
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 5px 5px 10px;
+  text-align: left;
+  font-family: var(--font-system);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--xp-text);
+  background: rgba(255, 255, 255, 0.75);
+  border: 1px solid var(--panel-well-border);
+  border-radius: var(--panel-radius-well);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  cursor: pointer;
+  transition: background var(--panel-dur) ease, border-color var(--panel-dur) ease, transform var(--panel-dur) var(--panel-ease), box-shadow var(--panel-dur) ease;
+}
+
+.panel-select-trigger:hover {
+  background: #fff;
+  border-color: rgba(0, 0, 0, 0.14);
+}
+
+.panel-select-trigger:active {
+  transform: scale(0.99);
+}
+
+.panel-select[data-open] .panel-select-trigger {
+  border-color: var(--wavi-accent);
+  box-shadow: inset 0 0 0 2px rgba(138, 206, 0, 0.55);
+}
+
+.panel-select-trigger:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.panel-select-value {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.panel-select-chevron-slot {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--panel-well);
+  border: 1px solid var(--panel-well-border);
+  border-radius: 7px;
+  color: var(--xp-text-dim);
+  transition: background var(--panel-dur) ease;
+}
+
+.panel-select-trigger:hover .panel-select-chevron-slot {
+  background: rgba(17, 22, 30, 0.07);
+}
+
+.panel-select-chevron {
+  display: block;
+  transition: transform var(--panel-dur) var(--panel-ease);
+}
+
+.panel-select[data-open] .panel-select-chevron {
+  transform: rotate(180deg);
+}
+
+.panel-select-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 120;
+  /* Solid — a translucent popover turns ghostly over the canvas. */
+  background: #fff;
+  isolation: isolate;
+  border: 1px solid var(--wavi-hairline);
+  border-radius: 10px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18);
+  padding: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.22) transparent;
+  scrollbar-gutter: stable;
+  animation: panel-select-in 0.12s var(--panel-ease);
+}
+
+@keyframes panel-select-in {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.panel-select-popover::-webkit-scrollbar {
+  width: 8px;
+}
+
+.panel-select-popover::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.panel-select-popover::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.22);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+.panel-select-search {
+  padding: 2px 2px 6px;
+}
+
+.panel-select-search input {
+  width: 100%;
+  min-height: 30px;
+  padding: 5px 9px;
+  font-family: var(--font-system);
+  font-size: 12px;
+  color: var(--xp-text);
+  background: rgba(255, 255, 255, 0.75);
+  border: 1px solid var(--panel-well-border);
+  border-radius: 8px;
+}
+
+.panel-select-search input::placeholder {
+  color: var(--xp-text-dim);
+}
+
+.panel-select-option {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 9px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--xp-text);
+  cursor: pointer;
+  transition: background var(--panel-dur) ease;
+}
+
+.panel-select-option:hover,
+.panel-select-option[data-active] {
+  background: var(--panel-hover);
+}
+
+.panel-select-option-label {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.panel-select-check-spacer {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+
+.panel-select-empty {
+  padding: 9px 10px;
+  font-size: 12px;
+  color: var(--xp-text-dim);
+  text-align: center;
+}
+
+.panel-select-option:focus-visible {
+  outline: 2px solid var(--wavi-accent);
+  outline-offset: -2px;
+}
+
+.panel-select-trigger:focus-visible {
+  outline: 2px solid var(--wavi-accent);
+  outline-offset: -2px;
+  border-color: var(--wavi-accent);
+}
+
+.spotify-search {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 0;
+  position: relative;
+}
+
+.spotify-search .spotify-search-icon {
+  position: absolute;
+  left: 11px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--xp-text-dim);
+  pointer-events: none;
+  display: flex;
+}
+
+.spotify-search input {
+  min-width: 0;
+  flex: 1;
+  font-family: var(--font-system);
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 5px 26px 5px 28px;
+  min-height: 32px;
+  background: var(--panel-well);
+  border: 1px solid var(--panel-well-border);
+  border-radius: var(--panel-radius-well);
+  color: var(--xp-text);
+  transition: border-color var(--panel-dur) ease, background var(--panel-dur) ease;
+}
+
+.spotify-search input::placeholder {
+  color: #6d6d75;
+  opacity: 1;
+}
+
+.spotify-search input:hover {
+  background: rgba(17, 22, 30, 0.06);
+}
+
+.spotify-track-list {
+  max-height: 180px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border: 1px solid var(--panel-well-border);
+  background: var(--panel-well);
+  border-radius: var(--panel-radius-well);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+  scrollbar-gutter: stable;
+}
+
+.spotify-track-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.spotify-track-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.spotify-track-list::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+.spotify-track {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  padding: 3px 7px 3px 5px;
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 11px;
+  text-align: left;
+  color: inherit;
+  transition: background var(--panel-dur) ease, border-color var(--panel-dur) ease;
+}
+
+.spotify-track:hover {
+  background: rgba(255, 255, 255, 0.45);
+  border-color: rgba(255, 255, 255, 0.6);
+}
+
+.spotify-track:focus-visible {
+  outline: 2px solid var(--wavi-accent);
+  outline-offset: -4px;
+}
+
+/* Pending spinner while a track handshakes with the Spotify SDK */
+.spotify-track.is-pending .spotify-track-index {
+  color: transparent;
+  position: relative;
+}
+
+.spotify-track.is-pending .spotify-track-index::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  margin-top: -5px;
+  border: 2px solid var(--wavi-accent);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: xp-spin 0.7s linear infinite;
+}
+
+@keyframes xp-spin {
+  to { transform: rotate(360deg); }
+}
+
+.spotify-track-art {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: rgba(0, 0, 0, 0.1);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06);
+}
+
+.spotify-track-index {
+  width: 20px;
+  color: #b0b0b8;
+  font-size: 10px;
+  font-weight: 600;
+  text-align: center;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Animated playing indicator on the active row */
+.spotify-eq {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 11px;
+  margin-left: 8px;
+  flex-shrink: 0;
+}
+
+.spotify-eq span {
+  display: block;
+  width: 3px;
+  background: var(--wavi-accent);
+  border-radius: 1px;
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: spotify-eq-bounce 0.9s ease-in-out infinite;
+}
+
+.spotify-eq span:nth-child(1) { height: 60%; animation-delay: 0s; }
+.spotify-eq span:nth-child(2) { height: 100%; animation-delay: 0.25s; }
+.spotify-eq span:nth-child(3) { height: 45%; animation-delay: 0.5s; }
+
+.spotify-eq.paused span {
+  animation-play-state: paused;
+  opacity: 0.45;
+}
+
+@keyframes spotify-eq-bounce {
+  0%, 100% { transform: scaleY(0.5); }
+  50% { transform: scaleY(1); }
+}
+
+.spotify-track-meta {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.spotify-track-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  color: var(--xp-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.spotify-track-artist {
+  font-size: 11px;
+  color: var(--xp-text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
+
+/* Dismissible error banner pinned to the top of the panel */
+.spotify-error-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  background: var(--wavi-error-surface);
+  border: 1px solid var(--wavi-error-border);
+  border-radius: var(--panel-radius-well);
+  padding: 8px 7px 8px 9px;
+  margin-bottom: 0;
+}
+
+.spotify-error-text {
+  flex: 1;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--wavi-error-text);
+}
+
+.spotify-error-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.spotify-error-retry {
+  background: var(--wavi-surface);
+  border: 1px solid var(--wavi-error-border);
+  border-radius: 999px;
+  color: var(--wavi-error-text);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.spotify-error-retry:hover {
+  background: var(--wavi-error-text);
+  border-color: var(--wavi-error-text);
+  color: var(--wavi-surface);
+}
+
+.spotify-error-dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: #b56a6a;
+  font-size: 14px;
+  line-height: 1;
+  padding: 4px 6px;
+  min-width: 28px;
+  min-height: 28px;
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.spotify-error-dismiss:hover {
+  color: var(--wavi-error-text);
+  background: rgba(143, 29, 29, 0.08);
+}
+
+/* Empty state before a playlist/search loads anything */
+.spotify-empty {
+  border: 1px dashed rgba(0, 0, 0, 0.16);
+  border-radius: var(--panel-radius-well);
+  background: var(--panel-well);
+  padding: 12px 9px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.spotify-empty-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--xp-text-dim);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 2px;
+}
+
+.spotify-empty-text {
+  font-size: 12px;
+  color: var(--xp-text-dim);
+  line-height: 1.55;
+  max-width: 24ch;
+}
+
+.spotify-empty-hint {
+  display: none;
+}
+

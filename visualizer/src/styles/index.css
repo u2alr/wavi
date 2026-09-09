@@ -1,0 +1,12 @@
+/* Split from styles.css. Order is load-bearing: later files win.
+   base -> shell -> panel -> spotify -> controls -> player -> overlays
+   -> responsive -> theme (theme stays last, it holds the override generations). */
+@import "./base.css";
+@import "./shell.css";
+@import "./panel.css";
+@import "./spotify.css";
+@import "./controls.css";
+@import "./player.css";
+@import "./overlays.css";
+@import "./responsive.css";
+@import "./theme.css";
