@@ -1,46 +1,52 @@
 /* ══════════════════════════════════════════════════════════════════════════════
    wavi.lol — Apple HIG / macOS porcelain + graphite design system
-   Soft pastel green #C3F588 is the accent (dark palette; lime legacy block left below).
+   Soft pastel green #C3F588 is the accent color (dark theme).
    ══════════════════════════════════════════════════════════════════════════════ */
 
 :root {
-  /* Accent */
-  --wavi-accent: #8ACE00;
-  --wavi-accent-ink: #1a2400;
-  --wavi-accent-tint: #eef7d8;
-  --wavi-accent-hover: #9ede00;
-  --wavi-accent-tint-soft: rgba(238, 247, 216, 0.7);
+  /* Accent — soft pastel green (dark theme) */
+  --wavi-accent: #c3f588;
+  --wavi-accent-ink: #f4f8ff;
+  --wavi-accent-hover: #d5ff9f;
+  --wavi-accent-tint: rgba(195, 245, 136, 0.14);
+  --wavi-accent-tint-soft: rgba(195, 245, 136, 0.12);
 
   /* Text */
-  --xp-text: #141417;
-  --xp-text-dim: #54555d;
+  --xp-text: var(--panel-ink);
+  --xp-text-dim: var(--panel-muted);
 
-  /* Surfaces */
+  /* Shared surfaces */
   --wavi-surface: #fff;
-  --wavi-surface-subtle: rgba(0, 0, 0, 0.04);
   --wavi-hairline: rgba(0, 0, 0, 0.12);
-  --wavi-border: #d5d5da;
 
-  /* Sidepanel card system (translucent glass — visualizer bleeds through) */
+  /* Sidepanel dark surfaces */
+  --panel-bg: #0b0b0d;
+  --panel-bg-strong: #111113;
   --panel-card: rgba(255, 255, 255, 0.44);
   --panel-card-border: rgba(20, 24, 32, 0.1);
   --panel-card-shadow: 0 1px 2px rgba(20, 24, 32, 0.06), 0 8px 24px rgba(20, 24, 32, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  --panel-card-dark: #1b1b1f;
+  --panel-card-dark-hover: #222327;
   --panel-well: rgba(17, 22, 30, 0.06);
   --panel-well-border: rgba(20, 24, 32, 0.1);
   --panel-hover: rgba(17, 22, 30, 0.05);
   --panel-pressed: rgba(17, 22, 30, 0.09);
+  --panel-ink: #f3f3f4;
+  --panel-muted: #a5a7ad;
+  --panel-faint: #696d76;
+  --panel-line: rgba(255, 255, 255, 0.08);
+  --panel-line-strong: rgba(255, 255, 255, 0.14);
+  --panel-fill: rgba(255, 255, 255, 0.055);
+  --panel-fill-hover: rgba(255, 255, 255, 0.095);
+  --panel-focus: rgba(195, 245, 136, 0.42);
 
   /* Error / Danger */
-  --wavi-error: #ff3b30;
-  --wavi-error-surface: #fdecec;
-  --wavi-error-text: #8f1d1d;
-  --wavi-error-border: #f3b8b8;
+  --wavi-error-surface: rgba(255, 69, 58, 0.12);
+  --wavi-error-text: #ffb4ae;
+  --wavi-error-border: rgba(255, 69, 58, 0.28);
 
-  /* Radius */
+  /* Radius & motion */
   --panel-radius-well: 10px;
-
-  /* Motion */
-  --wavi-transition: 0.12s ease;
   --panel-ease: cubic-bezier(0.2, 0.9, 0.25, 1);
   --panel-dur: 160ms;
 
@@ -529,108 +535,23 @@ body::before {
 }
 
 .control-panel.collapsed .control-panel-scroll,
-.control-panel.collapsed .panel-header,
 .control-panel.collapsed .panel-footer {
   opacity: 0;
   pointer-events: none;
 }
 
-/* In-panel header — replaces the protruding edge tab */
-.panel-header {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 8px 10px 5px;
-  flex-shrink: 0;
-  transition: opacity var(--panel-dur) ease;
-}
-
-.panel-header-eyebrow {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--xp-text-dim);
-}
-
+/* (BETA) badge — kept standalone; the Karaoke row uses it */
 .panel-header-sub {
-  font-size: 11px;
-  color: var(--xp-text-dim);
+  font-size: 12px;
+  font-weight: 520;
+  line-height: 1.25;
+  color: var(--panel-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   flex: 1;
   min-width: 0;
   padding-left: 4px;
-}
-
-.panel-collapse-btn {
-  width: 26px;
-  height: 26px;
-  border-radius: 8px;
-  border: 1px solid var(--wavi-hairline);
-  background: var(--panel-card);
-  color: var(--xp-text-dim);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  transition: background var(--panel-dur) ease, color var(--panel-dur) ease, transform var(--panel-dur) var(--panel-ease);
-}
-
-.panel-collapse-btn:hover {
-  background: #fff;
-  color: var(--xp-text);
-}
-
-.panel-collapse-btn:active {
-  transform: scale(0.94);
-}
-
-.panel-collapse-btn:focus-visible {
-  outline: 2px solid var(--wavi-accent);
-  outline-offset: -2px;
-}
-
-/* Floating reopen pill — icon-only tab docked on the canvas edge */
-.panel-reopen {
-  position: absolute;
-  top: 14px;
-  right: 0;
-  transform: translateX(0);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border-radius: 999px 0 0 999px;
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  border-right: none;
-  background: rgba(255, 255, 255, 0.78);
-  backdrop-filter: saturate(1.8) blur(16px);
-  -webkit-backdrop-filter: saturate(1.8) blur(16px);
-  box-shadow: -6px 4px 20px rgba(0, 0, 0, 0.16);
-  color: var(--xp-text);
-  cursor: pointer;
-  z-index: 31;
-  transition: background var(--panel-dur) ease, transform var(--panel-dur) var(--panel-ease);
-}
-
-.panel-reopen:hover {
-  background: #fff;
-  transform: translateX(-2px);
-}
-
-.panel-reopen:focus-visible {
-  outline: 2px solid var(--wavi-accent);
-  outline-offset: -2px;
-}
-
-/* Legacy edge tab — hidden, kept for compat */
-.panel-toggle-tab {
-  display: none;
 }
 
 .control-panel-scroll {
@@ -902,27 +823,6 @@ body::before {
   background: rgba(0, 0, 0, 0.1);
 }
 
-/* Skeleton shimmer for first-load track list (CSS only, no logic change) */
-@keyframes panel-shimmer {
-  0% { background-position: -200px 0; }
-  100% { background-position: 200px 0; }
-}
-
-.track-skeleton {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 6px;
-}
-
-.track-skeleton-row {
-  height: 48px;
-  border-radius: 8px;
-  background: linear-gradient(90deg, rgba(0,0,0,0.05) 25%, rgba(0,0,0,0.09) 50%, rgba(0,0,0,0.05) 75%);
-  background-size: 400px 100%;
-  animation: panel-shimmer 1.2s ease-in-out infinite;
-}
-
 /* Visually-hidden but screen-reader-accessible label */
 .sr-only {
   position: absolute;
@@ -997,18 +897,16 @@ body::before {
 .spotify-disconnect:focus-visible,
 .spotify-error-retry:focus-visible,
 .spotify-error-dismiss:focus-visible,
-.panel-collapse-btn:focus-visible,
-.panel-reopen:focus-visible,
 .menu-ext-badge:focus-visible {
   outline: 2px solid var(--wavi-accent);
   outline-offset: -2px;
 }
 
 .spotify-avatar {
-  width: 30px !important;
-  height: 30px !important;
-  max-width: 30px !important;
-  max-height: 30px !important;
+  width: 28px !important;
+  height: 28px !important;
+  max-width: 28px !important;
+  max-height: 28px !important;
   border-radius: 50%;
   object-fit: cover;
   flex-shrink: 0;
@@ -1223,11 +1121,6 @@ body::before {
   background: var(--panel-hover);
 }
 
-.panel-select-option.selected {
-  background: var(--wavi-accent-tint-soft);
-  color: var(--wavi-accent-ink);
-}
-
 .panel-select-option-label {
   flex: 1;
   min-width: 0;
@@ -1383,11 +1276,6 @@ body::before {
 
 @keyframes xp-spin {
   to { transform: rotate(360deg); }
-}
-
-.spotify-track.active {
-  background: transparent;
-  border-color: var(--wavi-accent);
 }
 
 .spotify-track-art {
@@ -2507,8 +2395,6 @@ select.xp-select:focus-visible, .xp-input:focus-visible,
   .xp-btn,
   .btn-tiny,
   .preset-chip,
-  .panel-reopen,
-  .panel-collapse-btn,
   .spotify-track {
     transition-duration: 0.01ms;
   }
@@ -2518,9 +2404,6 @@ select.xp-select:focus-visible, .xp-input:focus-visible,
   }
   .panel-select-chevron {
     transition: none;
-  }
-  .track-skeleton-row {
-    animation: none;
   }
 }
 
@@ -2622,83 +2505,6 @@ select.xp-select:focus-visible, .xp-input:focus-visible,
 
 .status-divider {
   color: #CCC;
-}
-
-/* ─── FULLSCREEN FLOATING HUD ─── */
-.fullscreen-hud {
-  position: absolute;
-  top: 16px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(15, 20, 30, 0.85);
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  border-radius: 30px;
-  padding: 6px 14px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  box-shadow: 0 10px 30px rgba(0,0,0,0.6);
-  z-index: 50;
-  transition: opacity 0.3s ease, transform 0.3s ease;
-}
-
-.fullscreen-hud.hidden {
-  opacity: 0;
-  transform: translate(-50%, -20px);
-  pointer-events: none;
-}
-
-.fullscreen-hud.visible {
-  opacity: 1;
-  transform: translate(-50%, 0);
-  pointer-events: auto;
-}
-
-.hud-pill-group {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.hud-pill {
-  font-size: 11px;
-  padding: 4px 10px;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  color: rgba(255, 255, 255, 0.8);
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.hud-pill:hover {
-  background: rgba(255, 255, 255, 0.2);
-  color: white;
-}
-
-.hud-pill.active {
-  background: var(--wavi-accent);
-  border-color: white;
-  color: white;
-  font-weight: bold;
-  box-shadow: 0 0 10px rgba(58, 147, 255, 0.6);
-}
-
-.hud-exit-btn {
-  font-size: 11px;
-  padding: 4px 10px;
-  border-radius: 14px;
-  background: rgba(255, 60, 60, 0.3);
-  border: 1px solid rgba(255, 100, 100, 0.4);
-  color: white;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.hud-exit-btn:hover {
-  background: rgba(255, 60, 60, 0.6);
 }
 
 /* ─── MODAL DIALOG (ABOUT / SHORTCUTS) ─── */
@@ -2969,12 +2775,6 @@ select.xp-select:focus-visible, .xp-input:focus-visible,
     width: min(350px, 92vw);
     margin-right: 0;
   }
-  .control-panel.collapsed .panel-reopen {
-    right: 100%;
-  }
-  .panel-reopen {
-    top: 12px;
-  }
   .shortcuts-grid {
     grid-template-columns: 1fr;
   }
@@ -3017,13 +2817,6 @@ select.xp-select:focus-visible, .xp-input:focus-visible,
     align-items: center;
     justify-content: center;
   }
-  .panel-collapse-btn,
-  .panel-reopen {
-    min-height: 40px;
-  }
-  .panel-reopen {
-    height: 40px;
-  }
 }
 
 @media (max-width: 600px) {
@@ -3036,86 +2829,12 @@ select.xp-select:focus-visible, .xp-input:focus-visible,
 }
 
 /* Sidepanel overhaul: calm inspector layout, denser hierarchy, fewer nested surfaces. */
-:root {
-  --panel-bg: rgba(247, 248, 248, 0.86);
-  --panel-bg-strong: rgba(255, 255, 255, 0.92);
-  --panel-ink: #17181c;
-  --panel-muted: #666b73;
-  --panel-faint: #8a9098;
-  --panel-line: rgba(22, 25, 30, 0.1);
-  --panel-line-strong: rgba(22, 25, 30, 0.16);
-  --panel-fill: rgba(22, 25, 30, 0.045);
-  --panel-fill-hover: rgba(22, 25, 30, 0.075);
-  --panel-focus: rgba(138, 206, 0, 0.34);
-  --panel-shadow-subtle: 0 10px 30px rgba(0, 0, 0, 0.12);
-}
-
 .control-panel {
   width: 372px;
   background: var(--panel-bg);
   border-left: none;
   box-shadow: none;
   color: var(--panel-ink);
-}
-
-.panel-header {
-  min-height: 52px;
-  padding: 11px 12px 9px;
-  gap: 9px;
-  border-bottom: 1px solid var(--panel-line);
-  background: transparent;
-}
-
-.panel-header-copy {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.panel-header-eyebrow {
-  font-size: 14px;
-  font-weight: 760;
-  letter-spacing: 0;
-  line-height: 1.1;
-  text-transform: none;
-  color: var(--panel-ink);
-}
-
-.panel-header-sub {
-  font-size: 12px;
-  font-weight: 520;
-  line-height: 1.25;
-  color: var(--panel-muted);
-}
-
-.panel-collapse-btn,
-.panel-reopen {
-  border-color: var(--panel-line);
-  background: rgba(255, 255, 255, 0.74);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-}
-
-.panel-collapse-btn {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-}
-
-.panel-collapse-btn:hover,
-.panel-reopen:hover {
-  background: #fff;
-  border-color: var(--panel-line-strong);
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.1);
-}
-
-.panel-reopen {
-  top: 16px;
-  width: 38px;
-  height: 38px;
-  border-radius: 10px 0 0 10px;
-  background: rgba(255, 255, 255, 0.86);
 }
 
 .control-panel-scroll {
@@ -3291,13 +3010,6 @@ select.xp-select:focus-visible, .xp-input:focus-visible,
   border-radius: 10px;
 }
 
-.spotify-avatar {
-  width: 28px !important;
-  height: 28px !important;
-  max-width: 28px !important;
-  max-height: 28px !important;
-}
-
 .spotify-name {
   font-size: 13px;
   font-weight: 680;
@@ -3409,11 +3121,6 @@ select.xp-select:focus-visible,
   background: var(--panel-fill-hover);
 }
 
-.panel-select-option.selected {
-  background: rgba(138, 206, 0, 0.18);
-  color: var(--wavi-accent-ink);
-}
-
 .spotify-search {
   margin: 0;
 }
@@ -3465,11 +3172,6 @@ select.xp-select:focus-visible,
 .spotify-track:hover {
   background: rgba(255, 255, 255, 0.78);
   border-color: transparent;
-}
-
-.spotify-track.active {
-  background: transparent;
-  border-color: var(--wavi-accent);
 }
 
 /* Section labels separating search results from the playlist queue. */
@@ -3764,8 +3466,6 @@ input[type="range"]::-moz-range-thumb {
 .spotify-disconnect:focus-visible,
 .spotify-error-retry:focus-visible,
 .spotify-error-dismiss:focus-visible,
-.panel-collapse-btn:focus-visible,
-.panel-reopen:focus-visible,
 .menu-ext-badge:focus-visible,
 .search-clear:focus-visible,
 .chip-load:focus-visible,
@@ -3868,11 +3568,6 @@ input[type="range"]:focus-visible {
     width: min(410px, 94vw);
   }
 
-  .panel-header {
-    min-height: 62px;
-    padding: 13px 14px 11px;
-  }
-
   .ctrl-group-header {
     padding: 13px 14px;
   }
@@ -3928,31 +3623,6 @@ input[type="range"]:focus-visible {
 }
 
 /* Dark mode palette inspired by the MiniCorp reference. */
-:root {
-  --wavi-accent: #c3f588;
-  --wavi-accent-hover: #d5ff9f;
-  --wavi-accent-ink: #f4f8ff;
-  --wavi-accent-tint: rgba(195, 245, 136, 0.14);
-  --wavi-accent-tint-soft: rgba(195, 245, 136, 0.12);
-  --panel-bg: #0b0b0d;
-  --panel-bg-strong: #111113;
-  --panel-card-dark: #1b1b1f;
-  --panel-card-dark-hover: #222327;
-  --panel-ink: #f3f3f4;
-  --panel-muted: #a5a7ad;
-  --panel-faint: #696d76;
-  --panel-line: rgba(255, 255, 255, 0.08);
-  --panel-line-strong: rgba(255, 255, 255, 0.14);
-  --panel-fill: rgba(255, 255, 255, 0.055);
-  --panel-fill-hover: rgba(255, 255, 255, 0.095);
-  --panel-focus: rgba(195, 245, 136, 0.42);
-  --xp-text: var(--panel-ink);
-  --xp-text-dim: var(--panel-muted);
-  --wavi-error-surface: rgba(255, 69, 58, 0.12);
-  --wavi-error-text: #ffb4ae;
-  --wavi-error-border: rgba(255, 69, 58, 0.28);
-}
-
 body {
   background-color: #050506;
   background-image:
@@ -4020,12 +3690,6 @@ body {
   color: var(--panel-ink);
 }
 
-.panel-header {
-  background: #0d0d10;
-  border-bottom-color: var(--panel-line);
-}
-
-.panel-header-eyebrow,
 .ctrl-group-title,
 .spotify-name,
 .spotify-track-title,
@@ -4054,8 +3718,7 @@ select.xp-select,
 }
 
 .ctrl-group + .ctrl-group,
-.ctrl-group-header,
-.panel-header {
+.ctrl-group-header {
   border-color: var(--panel-line);
 }
 
@@ -4064,8 +3727,6 @@ select.xp-select,
 }
 
 .ctrl-group-count,
-.panel-collapse-btn,
-.panel-reopen,
 .spotify-user,
 .audio-player-box,
 .sliders-container,
@@ -4132,11 +3793,12 @@ select.xp-select,
 
 .panel-select-option.selected {
   background: color-mix(in srgb, var(--wavi-accent) 14%, transparent) !important;
+  color: var(--wavi-accent-ink);
 }
 
 .spotify-track.active {
-  background: transparent !important;
-  border-color: var(--wavi-accent) !important;
+  background: transparent;
+  border-color: var(--wavi-accent);
 }
 
 .spotify-track.active:hover {
@@ -4160,8 +3822,6 @@ select.xp-select,
 .spotify-search input:hover,
 select.xp-select:hover,
 .xp-input:hover,
-.panel-collapse-btn:hover,
-.panel-reopen:hover,
 .xp-btn:hover,
 .spotify-disconnect:hover,
 .btn-tiny:hover {
@@ -4368,14 +4028,14 @@ input[type="range"]::-moz-range-thumb {
   color: #0d1200;
   text-transform: lowercase;
   filter: blur(1.1px);
-  animation: brat-line-in 0.16s cubic-bezier(0.2, 0.6, 0.3, 1);
+  animation: brat-line-in 0.1s cubic-bezier(0.2, 0.6, 0.3, 1);
 }
 
 @keyframes brat-line-in {
   from {
     opacity: 0;
-    transform: scale(0.86);
-    filter: blur(4px);
+    transform: scale(0.95);
+    filter: blur(2px);
   }
 }
 
@@ -4388,14 +4048,6 @@ input[type="range"]::-moz-range-thumb {
   max-width: 70%;
   text-align: justify;
   text-align-last: justify;
-  animation: brat-next-in 0.14s cubic-bezier(0.2, 0.6, 0.3, 1);
-}
-
-@keyframes brat-next-in {
-  from {
-    opacity: 0;
-    transform: scale(0.9);
-  }
 }
 
 .brat-overlay .brat-progress {

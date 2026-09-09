@@ -26,11 +26,13 @@ export default function ControlPanel({
   const isSpotifyAuthed = useStore((s) => s.isSpotifyAuthed)
   const bratWhiteBg = useStore((s) => s.bratWhiteBg)
   const bratKaraoke = useStore((s) => s.bratKaraoke)
+  const amFlip = useStore((s) => s.amFlip)
 
   const setParam = useStore((s) => s.setParam)
   const resetParams = useStore((s) => s.resetParams)
   const setBratWhiteBg = useStore((s) => s.setBratWhiteBg)
   const setBratKaraoke = useStore((s) => s.setBratKaraoke)
+  const setAmFlip = useStore((s) => s.setAmFlip)
 
   // Accordion state — audio open on first load, the rest expand on demand
   const [openSections, setOpenSections] = useState({
@@ -115,6 +117,17 @@ export default function ControlPanel({
                     <span className="brat-switch" aria-hidden="true" />
                   </label>
                 </>
+              ) : currentPreset === 'amPreset' || currentPreset === 'am2Preset' ? (
+                <label className="brat-bg-toggle" htmlFor="am-flip">
+                  <span className="brat-bg-label">Flip</span>
+                  <input
+                    id="am-flip"
+                    type="checkbox"
+                    checked={amFlip}
+                    onChange={(e) => setAmFlip(e.target.checked)}
+                  />
+                  <span className="brat-switch" aria-hidden="true" />
+                </label>
               ) : null}
 
               <div className="sliders-container">

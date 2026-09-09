@@ -1,6 +1,7 @@
 // Canonical preset list. Order also drives the A/D keyboard cycle.
 export const PRESET_TYPES = [
   'amPreset',
+  'am2Preset',
   'prismaticTempest',
   'auroraSilk',
   'brat',
@@ -14,6 +15,7 @@ export const PRESET_TYPES = [
 
 export const PRESET_LABELS: Record<string, string> = {
   amPreset: 'AM Preset',
+  am2Preset: 'AM2',
   prismaticTempest: 'Prismatic Tempest',
   auroraSilk: 'Aurora Silk',
   brat: 'brat',

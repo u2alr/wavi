@@ -72,6 +72,7 @@ interface Store {
   activeModal: 'help' | 'shortcuts' | null
   bratWhiteBg: boolean
   bratKaraoke: boolean
+  amFlip: boolean
   extensionStatus: '' | 'EXT LIVE' | 'EXT SILENT' | 'EXT READY' | 'EXT ERROR'
 
   setCurrentPreset: (p: string) => void
@@ -101,6 +102,7 @@ interface Store {
   setVolume: (v: number) => void
   setBratWhiteBg: (b: boolean) => void
   setBratKaraoke: (b: boolean) => void
+  setAmFlip: (b: boolean) => void
   setExtensionStatus: (s: '' | 'EXT LIVE' | 'EXT SILENT' | 'EXT READY' | 'EXT ERROR') => void
 }
 
@@ -153,6 +155,7 @@ export const useStore = create<Store>((set, get) => ({
   volume: 1.0,
   bratWhiteBg: false,
   bratKaraoke: false,
+  amFlip: false,
   extensionStatus: '' as '' | 'EXT LIVE' | 'EXT SILENT' | 'EXT READY' | 'EXT ERROR',
 
   setCurrentPreset: (p) => set({ currentPreset: p }),
@@ -179,6 +182,7 @@ export const useStore = create<Store>((set, get) => ({
   setVolume: (v) => set({ volume: v }),
   setBratWhiteBg: (b) => set({ bratWhiteBg: b }),
   setBratKaraoke: (b) => set({ bratKaraoke: b }),
+  setAmFlip: (b) => set({ amFlip: b }),
   setExtensionStatus: (s) => set({ extensionStatus: s }),
 
   savePreset: (name) => {
