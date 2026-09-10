@@ -1,236 +1,741 @@
-import { useEffect, useRef, useState } from 'react'
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
+import { motion, useReducedMotion } from 'motion/react'
 import { useStore } from '../store'
 import { getAudioElement } from '../audio'
 import { fetchLyrics, guessFromName, type LyricLine } from '../lyrics'
 import { usePlaybackTracker } from '../usePlaybackTracker'
 
-// Snap band vs SDK ground truth (ms) — matches brat's threshold.
 const SEEK_SNAP_MS = 2000
+const LINE_LEAD_SECONDS = 0.3
 
-/**
- * Apple Music-style lyrics for canvasAmbient2. Same fetch path as
- * BratLyrics; render-only difference: a vertical tumbler — previous
- * line above (exiting), current locked center, next below dimmed,
- * incoming rising from the bottom on each line change.
- *
- * Sync is derived during render from the playback tracker (20Hz), so
- * there is no RAF loop or ref-clock to stall — if dots persist, the
- * fetch returned nothing and the empty state says so.
+const PREVIOUS_LINES = 1
+const NEXT_LINES = 4
+
+/*
+ * Distance between the visually rendered edges of two lyrics.
+ * Increase this if you want more separation.
  */
-export default function AmbientLyrics({ active }: { active: boolean }) {
+const LINE_GAP = 22
+
+// Approximate fallback used before the first measurement exists.
+const BASE_LINE_HEIGHT = 58
+
+// Current lyric sits roughly two normal lines above center.
+const CURRENT_RAISE = -150
+
+export default function AmbientLyrics({
+  active,
+}: {
+  active: boolean
+}) {
   const [lines, setLines] = useState<LyricLine[]>([])
   const [fetched, setFetched] = useState(false)
   const [lyricSynced, setLyricSynced] = useState(true)
+  const [localTime, setLocalTime] = useState(0)
+
+  /*
+   * Measured unscaled layout height of every visible lyric.
+   *
+   * offsetHeight intentionally ignores transforms. We multiply it by the
+   * target scale when calculating positions so LINE_GAP is measured between
+   * the visually rendered edges, not merely between layout boxes.
+   */
+  const [heights, setHeights] = useState(
+    new Map<number, number>(),
+  )
+
   const trackName = useStore((s) => s.trackName)
   const track = useStore((s) => s.spotifyCurrentTrack)
   const playing = useStore((s) => s.spotifyPlaying)
   const playbackPosition = useStore((s) => s.playbackPosition)
 
-  // Primitives only — the store hands out a fresh track object per SDK
-  // event, and depending on it would refetch lyrics every event.
   const trackId = track?.id ?? null
   const trackTitle = track?.name ?? ''
   const trackArtist = track?.artists?.[0]?.name
 
-  // Tracker lives in this body (not a memo child) so its ticks always
-  // re-render this tree — a 3-line tumbler at 20Hz is trivial.
-  const { currentTime, resync } = usePlaybackTracker(playing, trackId, track?.duration_ms ?? 0)
+  const { currentTime, resync } = usePlaybackTracker(
+    playing,
+    trackId,
+    track?.duration_ms ?? 0,
+  )
 
-  // Ref mirror of the ticking clock so the snap effects below compare
-  // against fresh time without re-subscribing to every 50ms tick.
+  const reduceMotion = useReducedMotion()
+
+  const previousPlayingRef = useRef(playing)
   const timeRef = useRef(0)
+  const lyricSyncedRef = useRef(lyricSynced)
+
+  const lastSongKeyRef = useRef<string | null>(null)
+  const stalePositionRef = useRef<number | null>(null)
+
+  const nodeRefs = useRef(
+    new Map<number, HTMLDivElement>(),
+  )
+
+  const previousActiveIndexRef = useRef(-1)
+
   useEffect(() => {
     timeRef.current = currentTime
   }, [currentTime])
 
-  // Ref mirror so the resume-edge snap always sees the current flag.
-  const lyricSyncedRef = useRef(lyricSynced)
   useEffect(() => {
     lyricSyncedRef.current = lyricSynced
   }, [lyricSynced])
 
+  /*
+   * Local audio fallback.
+   */
+  useEffect(() => {
+    if (!active || trackId) return
+
+    const audio = getAudioElement()
+
+    const sync = () => {
+      setLocalTime(audio?.currentTime ?? 0)
+    }
+
+    sync()
+
+    const timer = window.setInterval(sync, 50)
+
+    audio?.addEventListener('timeupdate', sync)
+    audio?.addEventListener('play', sync)
+    audio?.addEventListener('pause', sync)
+    audio?.addEventListener('ended', sync)
+
+    return () => {
+      window.clearInterval(timer)
+
+      audio?.removeEventListener('timeupdate', sync)
+      audio?.removeEventListener('play', sync)
+      audio?.removeEventListener('pause', sync)
+      audio?.removeEventListener('ended', sync)
+    }
+  }, [active, trackId])
+
+  /*
+   * Fetch lyrics whenever the song changes.
+   */
   const songKey = trackId ?? `local:${trackName}`
-  const lastSongKeyRef = useRef<string | null>(null)
-  // Position the store held at the song change — it belongs to the OLD
-  // song until the SDK emits a fresh one. While set, the snap effects
-  // must not touch the clock.
-  const stalePosRef = useRef<number | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
-    if (lastSongKeyRef.current !== songKey) {
+
+    const changed =
+      lastSongKeyRef.current !== songKey
+
+    if (changed) {
       lastSongKeyRef.current = songKey
+
       setLines([])
       setFetched(false)
+      setHeights(new Map())
+
+      previousActiveIndexRef.current = -1
+
       resync(0)
-      stalePosRef.current = useStore.getState().playbackPosition
+
+      stalePositionRef.current =
+        useStore.getState().playbackPosition
     }
 
     const meta = trackId
-      ? { title: trackTitle, artist: trackArtist, id: trackId }
+      ? {
+          title: trackTitle,
+          artist: trackArtist,
+          id: trackId,
+        }
       : guessFromName(trackName)
 
     if (!meta.title) {
       setLines([])
       setFetched(true)
+
       return () => controller.abort()
     }
 
-    fetchLyrics(meta, controller.signal).then((res) => {
-      if (controller.signal.aborted) return
-      setLines(res ? res.lines : [])
-      setLyricSynced(res ? res.synced : true)
-      setFetched(true)
-    }).catch(() => { /* aborted */ })
+    fetchLyrics(meta, controller.signal)
+      .then((result) => {
+        if (controller.signal.aborted) return
+
+        setLines(result ? result.lines : [])
+        setLyricSynced(result ? result.synced : true)
+        setFetched(true)
+      })
+      .catch(() => {
+        if (controller.signal.aborted) return
+
+        setLines([])
+        setFetched(true)
+      })
 
     return () => controller.abort()
-  }, [trackId, trackName, trackTitle, trackArtist, songKey, resync])
+  }, [
+    trackId,
+    trackName,
+    trackTitle,
+    trackArtist,
+    songKey,
+    resync,
+  ])
 
-  // Sync snap (Spotify only — local files read audio.currentTime live, so
-  // seeks already follow). Snaps the tracker to SDK ground truth ONLY on
-  // fresh information: a changed playbackPosition (seeks / track changes /
-  // SDK corrections) or a pause→play resume edge (the SDK may have moved
-  // while time looked frozen). Never on a timer. Fabricated timings
-  // (unsynced fallback sources) get a wider band.
+  /*
+   * Keep lyrics synchronized with Spotify.
+   */
   useEffect(() => {
     if (!trackId || !playing) return
-    if (stalePosRef.current !== null) {
-      if (playbackPosition === stalePosRef.current) return
-      stalePosRef.current = null
+
+    if (stalePositionRef.current !== null) {
+      if (
+        playbackPosition ===
+        stalePositionRef.current
+      ) {
+        return
+      }
+
+      stalePositionRef.current = null
     }
-    const threshold = lyricSynced ? SEEK_SNAP_MS : SEEK_SNAP_MS * 3
-    if (Math.abs(timeRef.current - playbackPosition) > threshold) {
+
+    const threshold = lyricSynced
+      ? SEEK_SNAP_MS
+      : SEEK_SNAP_MS * 3
+
+    if (
+      Math.abs(
+        timeRef.current - playbackPosition,
+      ) > threshold
+    ) {
       resync(playbackPosition)
     }
-  }, [playbackPosition, trackId, playing, lyricSynced, resync])
+  }, [
+    playbackPosition,
+    trackId,
+    playing,
+    lyricSynced,
+    resync,
+  ])
 
-  // Resume-edge snap: no SDK position arrives exactly at resume, so catch
-  // the transition itself instead of waiting for the next event.
-  const prevPlayingRef = useRef(playing)
+  /*
+   * Correct position when playback resumes.
+   */
   useEffect(() => {
-    const resumed = playing && !prevPlayingRef.current
-    prevPlayingRef.current = playing
+    const resumed =
+      playing && !previousPlayingRef.current
+
+    previousPlayingRef.current = playing
+
     if (!resumed || !trackId) return
-    const sdkPos = useStore.getState().playbackPosition
-    if (stalePosRef.current !== null) {
-      if (sdkPos === stalePosRef.current) return
-      stalePosRef.current = null
+
+    const sdkPosition =
+      useStore.getState().playbackPosition
+
+    if (stalePositionRef.current !== null) {
+      if (
+        sdkPosition ===
+        stalePositionRef.current
+      ) {
+        return
+      }
+
+      stalePositionRef.current = null
     }
-    const threshold = lyricSyncedRef.current ? SEEK_SNAP_MS : SEEK_SNAP_MS * 3
-    if (Math.abs(timeRef.current - sdkPos) > threshold) {
-      resync(sdkPos)
+
+    const threshold = lyricSyncedRef.current
+      ? SEEK_SNAP_MS
+      : SEEK_SNAP_MS * 3
+
+    if (
+      Math.abs(
+        timeRef.current - sdkPosition,
+      ) > threshold
+    ) {
+      resync(sdkPosition)
     }
   }, [playing, trackId, resync])
 
-  const audio = active && !trackId ? getAudioElement() : null
-  const pos = trackId ? currentTime / 1000 : (audio?.currentTime ?? 0)
-  // Frozen on pause: the tracker stops ticking, so the index stays on
-  // the current line instead of jumping to the first.
-  const lineIdx = !active ? -1 : lines.findIndex((l) => pos >= l.start && pos < l.end)
+  const position = trackId
+    ? currentTime / 1000
+    : localTime
 
-  // Ticker: on a forward line step, swap to the new content immediately
-  // but start the stack shifted DOWN one line, then glide to zero in a
-  // single animation — no snap-back, so next→current travel is smooth.
-  // No steady prev line: the outgoing line only lives transiently while
-  // it fades upward (`leaving`), then unmounts.
-  const SLIDE_MS = 600
-  const tumblerRefs = useRef({ current: null as HTMLDivElement | null, next: null as HTMLDivElement | null })
-  const [shownIdx, setShownIdx] = useState(lineIdx)
-  const [glide, setGlide] = useState<{ px: number; go: boolean } | null>(null)
-  const [leaving, setLeaving] = useState<LyricLine | null>(null)
-  const glideTimer = useRef(0)
-  const prevSongKeyRef = useRef(songKey)
-  const reduceMotionRef = useRef(
-    typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
-  )
+  /*
+   * Find active lyric.
+   */
+  const activeIndex = useMemo(() => {
+    if (!active || !lines.length) return -1
 
-  const settleInstant = (idx: number) => {
-    window.clearTimeout(glideTimer.current)
-    setShownIdx(idx)
-    setGlide(null)
-    setLeaving(null)
+    let index = -1
+
+    for (let i = 0; i < lines.length; i++) {
+      if (
+        position >=
+        lines[i].start - LINE_LEAD_SECONDS
+      ) {
+        index = i
+      } else {
+        break
+      }
+    }
+
+    return index
+  }, [active, lines, position])
+
+  const ended =
+    activeIndex === -1 &&
+    lines.length > 0 &&
+    position >= lines[lines.length - 1].end
+
+  const currentIndex = ended
+    ? -1
+    : activeIndex
+
+  /*
+   * Only render one previous and four upcoming lyrics.
+   */
+  const visibleLines = useMemo(() => {
+    if (currentIndex < 0) return []
+
+    const start = Math.max(
+      0,
+      currentIndex - PREVIOUS_LINES,
+    )
+
+    const end = Math.min(
+      lines.length,
+      currentIndex + NEXT_LINES + 1,
+    )
+
+    return lines.slice(start, end)
+  }, [lines, currentIndex])
+
+  const readVisibleHeights = () => {
+    const nextHeights = new Map<number, number>()
+
+    for (const line of visibleLines) {
+      const node = nodeRefs.current.get(
+        line.start,
+      )
+
+      if (!node) continue
+
+      /*
+       * offsetHeight includes wrapped lines and vertical padding,
+       * but intentionally excludes the motion scale transform.
+       */
+      const height = node.offsetHeight
+
+      if (height > 0) {
+        nextHeights.set(line.start, height)
+      }
+    }
+
+    return nextHeights
   }
 
-  useEffect(() => {
-    if (lineIdx === shownIdx) return
-    if (prevSongKeyRef.current !== songKey) {
-      prevSongKeyRef.current = songKey
-      settleInstant(lineIdx)
-      return
-    }
-    if (reduceMotionRef.current || glide || lineIdx !== shownIdx + 1) {
-      settleInstant(lineIdx)
-      return
-    }
-    // DOM still shows the old content — measure with offsetTop so an
-    // in-flight transform can't skew the distance.
-    const cur = tumblerRefs.current.current
-    const nxt = tumblerRefs.current.next
-    let px = cur?.offsetHeight ?? 0
-    if (cur && nxt) px = nxt.offsetTop - cur.offsetTop
-    if (!(px > 0)) {
-      settleInstant(lineIdx)
-      return
-    }
-    setLeaving(shownIdx > 0 ? lines[shownIdx - 1] : null)
-    setShownIdx(lineIdx)
-    setGlide({ px, go: false })
-    // Double rAF so the offset paints before the transition engages.
-    let raf2 = 0
-    const raf1 = requestAnimationFrame(() => {
-      raf2 = requestAnimationFrame(() => setGlide({ px, go: true }))
+  const commitHeights = (
+    nextHeights: Map<number, number>,
+  ) => {
+    if (!nextHeights.size) return
+
+    setHeights((previous) => {
+      let changed =
+        previous.size !== nextHeights.size
+
+      if (!changed) {
+        for (const [key, value] of nextHeights) {
+          if (
+            Math.abs(
+              (previous.get(key) ?? 0) - value,
+            ) > 0.5
+          ) {
+            changed = true
+            break
+          }
+        }
+      }
+
+      if (!changed) return previous
+
+      const merged = new Map(previous)
+
+      for (const [key, value] of nextHeights) {
+        merged.set(key, value)
+      }
+
+      return merged
     })
-    glideTimer.current = window.setTimeout(() => {
-      setGlide(null)
-      setLeaving(null)
-    }, SLIDE_MS + 60)
-    return () => {
-      cancelAnimationFrame(raf1)
-      cancelAnimationFrame(raf2)
+  }
+
+  /*
+   * Measure before paint whenever the visible slice changes.
+   */
+  useLayoutEffect(() => {
+    commitHeights(readVisibleHeights())
+  }, [visibleLines])
+
+  /*
+   * Continue observing each lyric so font loading, font-weight changes,
+   * container resizing, and text wrapping update neighboring positions.
+   */
+  useLayoutEffect(() => {
+    if (!visibleLines.length) return
+
+    const measure = () => {
+      const nextHeights = new Map<number, number>()
+
+      for (const [
+        key,
+        node,
+      ] of nodeRefs.current) {
+        const height = node.offsetHeight
+
+        if (height > 0) {
+          nextHeights.set(key, height)
+        }
+      }
+
+      commitHeights(nextHeights)
     }
-  }, [lineIdx, shownIdx, songKey, glide, lines])
 
-  useEffect(() => () => window.clearTimeout(glideTimer.current), [])
+    const observer = new ResizeObserver(measure)
 
-  // Past the last line's end: stay blank. Without this, the index falls
-  // back to -1 and `upcoming` re-shows the song from the start.
-  // All render reads use `shownIdx` (the ticker may lag one step behind).
-  const ended = shownIdx === -1 && lines.length > 0 && pos >= lines[lines.length - 1].end
+    for (const line of visibleLines) {
+      const node = nodeRefs.current.get(
+        line.start,
+      )
 
-  // One line back, four ahead. New arrivals fade in via .amb-line's
-  // mount animation; the outgoing line floats off via .amb-leaving.
-  const current = shownIdx >= 0 ? lines[shownIdx] : null
-  const upcoming =
-    ended ? [] : shownIdx >= 0 ? lines.slice(shownIdx + 1, shownIdx + 6) : lines.slice(0, 6)
+      if (node) observer.observe(node)
+    }
+
+    measure()
+
+    return () => observer.disconnect()
+  }, [visibleLines])
+
+  const getDistance = (index: number) =>
+    index - currentIndex
+
+  const getOpacity = (distance: number) => {
+    if (distance === 0) return 1
+    if (distance === -1) return 0
+    if (distance === 1) return 0.48
+    if (distance === 2) return 0.25
+    if (distance === 3) return 0.12
+
+    return 0.045
+  }
+
+  const getScale = (distance: number) => {
+    if (distance === 0) return 1
+    if (distance === -1) return 0.96
+    if (distance === 1) return 0.94
+    if (distance === 2) return 0.9
+    if (distance === 3) return 0.87
+
+    return 0.84
+  }
+
+  const getBlur = (distance: number) => {
+    const d = Math.abs(distance)
+
+    if (d === 0) return 0
+    if (d === 1) return 0.25
+    if (d === 2) return 0.6
+    if (d === 3) return 1
+    if (d === 4) return 1.5
+
+    return 2
+  }
+
+  const getHeight = (line: LyricLine) =>
+    heights.get(line.start) ??
+    BASE_LINE_HEIGHT
+
+  /*
+   * The actual rendered height after the motion scale is applied.
+   * Using this for layout makes LINE_GAP consistent between:
+   *
+   * - one-line lyrics
+   * - two-line wrapped lyrics
+   * - lyrics with different target scales
+   */
+  const getVisualHeight = (
+    line: LyricLine,
+    distance: number,
+  ) =>
+    getHeight(line) *
+    getScale(distance)
+
+  /*
+   * Calculate positions from the visually rendered top and bottom edges.
+   *
+   * Current stays at CURRENT_RAISE.
+   * Every following lyric starts exactly LINE_GAP below the previous
+   * lyric's rendered bottom edge.
+   * The previous lyric ends exactly LINE_GAP above the current lyric.
+   */
+  const getYPositions = () => {
+    const positions = new Map<number, number>()
+
+    if (currentIndex < 0) return positions
+
+    const currentLine =
+      lines[currentIndex]
+
+    if (!currentLine) return positions
+
+    const currentDistance = 0
+
+    const currentVisualHeight =
+      getVisualHeight(
+        currentLine,
+        currentDistance,
+      )
+
+    positions.set(
+      currentLine.start,
+      CURRENT_RAISE,
+    )
+
+    /*
+     * Upcoming lyrics.
+     */
+    let previousY = CURRENT_RAISE
+    let previousVisualHeight =
+      currentVisualHeight
+
+    const upcomingEnd = Math.min(
+      lines.length,
+      currentIndex + NEXT_LINES + 1,
+    )
+
+    for (
+      let i = currentIndex + 1;
+      i < upcomingEnd;
+      i++
+    ) {
+      const line = lines[i]
+      const distance = getDistance(i)
+
+      const visualHeight =
+        getVisualHeight(
+          line,
+          distance,
+        )
+
+      const y =
+        previousY +
+        previousVisualHeight / 2 +
+        LINE_GAP +
+        visualHeight / 2
+
+      positions.set(line.start, y)
+
+      previousY = y
+      previousVisualHeight = visualHeight
+    }
+
+    /*
+     * Previous lyric.
+     */
+    if (currentIndex > 0) {
+      const previousLine =
+        lines[currentIndex - 1]
+
+      const previousDistance =
+        getDistance(
+          currentIndex - 1,
+        )
+
+      const previousVisualHeight =
+        getVisualHeight(
+          previousLine,
+          previousDistance,
+        )
+
+      const y =
+        CURRENT_RAISE -
+        currentVisualHeight / 2 -
+        LINE_GAP -
+        previousVisualHeight / 2
+
+      positions.set(
+        previousLine.start,
+        y,
+      )
+    }
+
+    return positions
+  }
+
+  const yPositions = getYPositions()
+
+  /*
+   * Track active lyric changes.
+   */
+  const activeChanged =
+    previousActiveIndexRef.current !==
+    currentIndex
+
+  useEffect(() => {
+    previousActiveIndexRef.current =
+      currentIndex
+  }, [currentIndex])
+
+  const transition = reduceMotion
+    ? {
+        duration: 0,
+      }
+    : {
+        type: 'spring' as const,
+        stiffness: 170,
+        damping: 28,
+        mass: 0.75,
+      }
+
+  if (!active) return null
 
   return (
-    <div className="amb-lyrics" style={{ display: active ? 'flex' : 'none' }}>
-      <div
-        className={glide?.go ? 'amb-tumbler amb-slide' : 'amb-tumbler'}
-        style={glide ? { transform: `translateY(${glide.go ? 0 : glide.px}px)` } : undefined}
-      >
-        <div className="amb-slot amb-top" />
-        <div className="amb-current-wrap">
-          {leaving && (
-            <div key={leaving.start} className="amb-line amb-prev amb-leaving">{leaving.text}</div>
-          )}
-          <div
-            key={shownIdx}
-            ref={(el) => { tumblerRefs.current.current = el }}
-            className="amb-line amb-current"
+    <div className="amb-lyrics">
+      <div className="amb-tumbler">
+        {!fetched ? (
+          <motion.div
+            className="amb-status"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 0.45 }}
           >
-          {current ? current.text : ended ? '' : !fetched ? '...' : lines.length === 0 ? 'no lyrics for this track' : '...'}
+            ...
+          </motion.div>
+        ) : lines.length === 0 ? (
+          <motion.div
+            className="amb-status"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 0.45 }}
+          >
+            no lyrics for this track
+          </motion.div>
+        ) : ended ? null : (
+          <div className="amb-stack">
+            {visibleLines.map((line) => {
+              const absoluteIndex =
+                lines.findIndex(
+                  (item) =>
+                    item.start === line.start,
+                )
+
+              const distance =
+                getDistance(absoluteIndex)
+
+              const isCurrent =
+                distance === 0
+
+              const isBottom =
+                distance === NEXT_LINES
+
+              const y =
+                yPositions.get(line.start) ??
+                CURRENT_RAISE +
+                  distance *
+                    BASE_LINE_HEIGHT
+
+              /*
+               * A newly introduced bottom lyric starts at its final
+               * bottom position, so it does not fly in from center.
+               */
+              const initialBottom =
+                isBottom &&
+                activeChanged &&
+                absoluteIndex >
+                  previousActiveIndexRef.current
+
+              return (
+                <motion.div
+                  key={line.start}
+                  ref={(node) => {
+                    if (node) {
+                      nodeRefs.current.set(
+                        line.start,
+                        node,
+                      )
+                    } else {
+                      nodeRefs.current.delete(
+                        line.start,
+                      )
+                    }
+                  }}
+                  className={`amb-line${
+                    isCurrent
+                      ? ' is-active'
+                      : ''
+                  }`}
+                  style={{
+                    /*
+                     * Ensure the active lyric stays visually above
+                     * upcoming lyrics during scale transitions.
+                     */
+                    zIndex: isCurrent
+                      ? 5
+                      : 4 -
+                        Math.max(
+                          distance,
+                          0,
+                        ),
+                  }}
+                  initial={
+                    initialBottom
+                      ? {
+                          opacity: 0,
+                          scale: 0.84,
+                          y,
+                          filter:
+                            'blur(1.5px)',
+                        }
+                      : false
+                  }
+                  animate={{
+                    opacity:
+                      getOpacity(distance),
+                    scale:
+                      getScale(distance),
+                    y,
+                    filter: `blur(${getBlur(
+                      distance,
+                    )}px)`,
+                  }}
+                  transition={
+                    initialBottom &&
+                    !reduceMotion
+                      ? {
+                          y: {
+                            duration: 0,
+                          },
+                          opacity: {
+                            duration: 0.35,
+                            ease: 'easeOut',
+                          },
+                          scale: {
+                            duration: 0.35,
+                            ease: 'easeOut',
+                          },
+                          filter: {
+                            duration: 0.35,
+                            ease: 'easeOut',
+                          },
+                        }
+                      : transition
+                  }
+                >
+                  {line.text}
+                </motion.div>
+              )
+            })}
           </div>
-        </div>
-        <div className="amb-slot amb-bottom">
-          {upcoming.map((l, i) => (
-            <div
-              key={l.start}
-              ref={i === 0 ? (el) => { tumblerRefs.current.next = el } : undefined}
-              className="amb-line amb-next"
-            >{l.text}</div>
-          ))}
-        </div>
+        )}
       </div>
     </div>
   )

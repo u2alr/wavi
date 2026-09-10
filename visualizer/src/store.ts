@@ -40,6 +40,9 @@ export const PRESET_ID_RENAMES: Record<string, string> = {
   liquidDrift: 'mellow1',
   mellowDrift: 'mellow2',
   sonarBloom: 'chromaticBurst',
+  touchRadial: 'mellow2',
+  lightDome: 'mellow2',
+  am3Preset: 'mellow2',
 }
 
 // Preset ids that no longer exist. Anything referencing these is dropped.
