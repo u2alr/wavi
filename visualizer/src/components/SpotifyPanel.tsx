@@ -42,12 +42,6 @@ export default function SpotifyPanel() {
   /** Re-runnable copy of the last failed action, for the banner's Retry button. */
   const retryRef = useRef<(() => void) | null>(null)
 
-  const saveLastTrack = (track: { uri: string; name: string }, playlistId = selectedPlaylistId) => {
-    localStorage.setItem('viz-last-spotify-track', JSON.stringify({
-      uri: track.uri, name: track.name, playlistId,
-    }))
-  }
-
   const fail = (err: unknown, retry?: () => void) => {
     const msg = err instanceof Error ? err.message : String(err)
     setError(msg)
@@ -109,7 +103,6 @@ export default function SpotifyPanel() {
       setCurrentTrack(list[i])
       setTrackName(list[i].name)
       setPlaying(true)
-      saveLastTrack(list[i])
       // Guard against stale SDK events immediately, before any async work.
       setPendingTrackId(list[i].id)
 

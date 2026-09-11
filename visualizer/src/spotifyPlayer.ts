@@ -34,9 +34,30 @@ export function setSpotifyStateListener(cb: (s: SpotifyPlaybackState | null) => 
   stateListener = cb
 }
 
+/**
+ * How long a requested track may stay "pending" before we stop treating SDK
+ * events for other tracks as stale. Without an expiry, a play request the SDK
+ * never confirms (failed transfer, another device taking over, a dropped
+ * event) would leave the guard set forever and silently swallow every later
+ * state update — freezing transport, progress and lyrics for the session.
+ */
+const PENDING_TRACK_TIMEOUT_MS = 6000
+
+let pendingTrackTimer = 0
+
 /** Track id we most recently requested to play (used to ignore stale SDK events). */
 export function setPendingTrackId(id: string | null) {
   pendingTrackId = id
+  if (pendingTrackTimer) {
+    window.clearTimeout(pendingTrackTimer)
+    pendingTrackTimer = 0
+  }
+  if (id !== null) {
+    pendingTrackTimer = window.setTimeout(() => {
+      pendingTrackId = null
+      pendingTrackTimer = 0
+    }, PENDING_TRACK_TIMEOUT_MS)
+  }
 }
 
 export function getPendingTrackId(): string | null {
@@ -128,6 +149,7 @@ export async function disconnectSpotifyPlayer() {
     player = null
     deviceId = null
     transferredDeviceId = null
+    setPendingTrackId(null)
   }
 }
 
@@ -158,7 +180,7 @@ export async function playContext(contextUri: string, deviceId = getSpotifyDevic
 
 /** Play a specific list of track URIs starting at `offset`. */
 export async function playTracks(uris: string[], offset = 0, deviceId = getSpotifyDeviceId()): Promise<void> {
-  pendingTrackId = uris[offset]?.split(':').pop() ?? null
+  setPendingTrackId(uris[offset]?.split(':').pop() ?? null)
   const suffix = deviceId ? `?device_id=${encodeURIComponent(deviceId)}` : ''
   try {
     await spotifyApi<void>(`/me/player/play${suffix}`, {
@@ -167,7 +189,7 @@ export async function playTracks(uris: string[], offset = 0, deviceId = getSpoti
       body: JSON.stringify({ uris, offset: { position: offset } }),
     })
   } catch (err) {
-    pendingTrackId = null
+    setPendingTrackId(null)
     throw err
   }
 }
@@ -187,13 +209,13 @@ export async function resumeSpotify(): Promise<void> {
 }
 
 export async function nextSpotify(): Promise<void> {
-  pendingTrackId = null
+  setPendingTrackId(null)
   await ensureSpotifyPlayer()
   await player.nextTrack()
 }
 
 export async function previousSpotify(): Promise<void> {
-  pendingTrackId = null
+  setPendingTrackId(null)
   await ensureSpotifyPlayer()
   await player.previousTrack()
 }

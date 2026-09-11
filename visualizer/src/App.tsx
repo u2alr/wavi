@@ -33,6 +33,8 @@ import AmbientLyrics from './components/AmbientLyrics'
 import StatusBar from './components/StatusBar'
 import ExtensionBadge from './components/ExtensionBadge'
 import SavedLooksSection from './components/SavedLooksMenu'
+import AnalysisDebugOverlay from './components/AnalysisDebugOverlay'
+import { setAnalysisDebug } from './analyser'
 
 // Canonical order also drives the A/D keyboard cycle.
 
@@ -69,10 +71,17 @@ export default function App() {
   const setPanelCollapsed = useStore((s) => s.setPanelCollapsed)
   const setActiveModal = useStore((s) => s.setActiveModal)
 
-  const [, setShowUI] = useState(true)
   const [showStatusBar, setShowStatusBar] = useState(false)
+  const [showAnalysisDebug, setShowAnalysisDebug] = useState(
+    () => new URLSearchParams(window.location.search).has('analysis-debug'),
+  )
+  useEffect(() => {
+    setAnalysisDebug(showAnalysisDebug)
+  }, [showAnalysisDebug])
   const extensionStatus = useStore((s) => s.extensionStatus)
   const setExtensionStatus = useStore((s) => s.setExtensionStatus)
+  const fpsLimit = useStore((s) => s.fpsLimit)
+  const setFpsLimit = useStore((s) => s.setFpsLimit)
   const [menuToast, setMenuToast] = useState<{ text: string; error?: boolean; key: number } | null>(null)
   const menuToastTimer = useRef(0)
 
@@ -127,9 +136,15 @@ export default function App() {
   }, [])
 
   // Spotify OAuth
+  const exchangedCodeRef = useRef<string | null>(null)
   useEffect(() => {
     const code = new URLSearchParams(window.location.search).get('code')
     if (code) {
+      // StrictMode invokes effects twice in dev and the ?code= is only stripped
+      // asynchronously below, so without this guard the same authorization code
+      // is POSTed twice and the second attempt fails with invalid_grant.
+      if (exchangedCodeRef.current === code) return
+      exchangedCodeRef.current = code
       exchangeCodeForToken(code)
         .then(async () => {
           const user = await getSpotifyUser()
@@ -360,9 +375,7 @@ export default function App() {
   // Native fullscreen changes listener
   useEffect(() => {
     const handler = () => {
-      const isFS = !!document.fullscreenElement
-      setIsFullscreen(isFS)
-      setShowUI(isFS)
+      setIsFullscreen(!!document.fullscreenElement)
     }
     document.addEventListener('fullscreenchange', handler)
     return () => document.removeEventListener('fullscreenchange', handler)
@@ -385,30 +398,6 @@ export default function App() {
       preFsPanelRef.current = null
     }
   }, [isFullscreen, setPanelCollapsed, showMenuToast])
-
-  // Mouse activity timer for fullscreen HUD fade
-  useEffect(() => {
-    if (!isFullscreen) return
-
-    let timeoutId: ReturnType<typeof setTimeout>
-    const handleActivity = () => {
-      setShowUI(true)
-      clearTimeout(timeoutId)
-      timeoutId = setTimeout(() => setShowUI(false), 3200)
-    }
-
-    handleActivity()
-    window.addEventListener('mousemove', handleActivity)
-    window.addEventListener('click', handleActivity)
-    window.addEventListener('keydown', handleActivity)
-
-    return () => {
-      window.removeEventListener('mousemove', handleActivity)
-      window.removeEventListener('click', handleActivity)
-      window.removeEventListener('keydown', handleActivity)
-      clearTimeout(timeoutId)
-    }
-  }, [isFullscreen])
 
   // Global Keyboard Shortcuts
   useEffect(() => {
@@ -464,6 +453,9 @@ export default function App() {
       } else if (key === 'tab' || key === 'h') {
         event.preventDefault()
         togglePanelCollapsed()
+      } else if (key === 'y') {
+        event.preventDefault()
+        setShowAnalysisDebug((s) => !s)
       } else if (key === 'escape') {
         setOpenMenu(null)
         setActiveModal(null)
@@ -695,6 +687,27 @@ export default function App() {
                     ))}
                     <div className="dropdown-divider" />
                     <div
+                      style={{
+                        padding: '4px 12px',
+                        fontSize: 10,
+                        fontWeight: 'bold',
+                        color: '#666',
+                        letterSpacing: 0.5,
+                      }}
+                    >
+                      FRAME RATE
+                    </div>
+                    {([30, 60, 75, 100, 120, 144, 160, 200, 240, 0] as const).map((fps) => (
+                      <div
+                        key={fps}
+                        className={`dropdown-item ${fpsLimit === fps ? 'checked' : ''}`}
+                        onClick={() => setFpsLimit(fps)}
+                      >
+                        <span>{fps === 0 ? 'Unlimited' : `${fps} FPS`}</span>
+                      </div>
+                    ))}
+                    <div className="dropdown-divider" />
+                    <div
                       className="dropdown-item"
                       onClick={() => {
                         resetParams()
@@ -796,6 +809,9 @@ export default function App() {
 
       {/* ABOUT & SHORTCUTS MODAL */}
       <AboutModal />
+
+      {/* Analysis engine debug overlay (?analysis-debug) */}
+      {showAnalysisDebug && <AnalysisDebugOverlay />}
 
       {/* Window-level toasts for menu actions (save/share). */}
       <div className="xp-toast-region" role="status" aria-live="polite">

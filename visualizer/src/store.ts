@@ -21,8 +21,9 @@ export const PRESET_PARAM_KEYS: Record<string, PresetParamKey[]> = {
   auroraSilk: ['intensity', 'sensitivity', 'hueShift', 'speed', 'complexity'],
   mellow1: ['intensity', 'sensitivity', 'hueShift', 'speed', 'complexity'],
   prismaticTempest: ['intensity', 'sensitivity', 'hueShift', 'speed', 'complexity'],
+  sandsOfTime: ['intensity', 'sensitivity', 'hueShift', 'speed', 'complexity'],
   acidWash: ['intensity', 'sensitivity', 'hueShift', 'speed', 'complexity'],
-  chromaticBurst: ['intensity', 'sensitivity', 'hueShift', 'speed'],
+  chromaticBurst: ['intensity', 'hueShift', 'speed'],
   waveform: ['sensitivity', 'speed'],
   amPreset: ['sensitivity', 'speed'],
   am2Preset: ['sensitivity', 'speed', 'bassAmp', 'midAmp', 'trebleAmp'],
@@ -99,6 +100,8 @@ interface Store {
   bratKaraoke: boolean
   amFlip: boolean
   extensionStatus: '' | 'EXT LIVE' | 'EXT SILENT' | 'EXT READY' | 'EXT ERROR'
+  /** Render FPS cap (0 = unlimited). Session-only. */
+  fpsLimit: number
 
   setCurrentPreset: (p: string) => void
   setParam: <K extends keyof PresetParams>(key: K, value: PresetParams[K]) => void
@@ -131,6 +134,7 @@ interface Store {
   setBratKaraoke: (b: boolean) => void
   setAmFlip: (b: boolean) => void
   setExtensionStatus: (s: '' | 'EXT LIVE' | 'EXT SILENT' | 'EXT READY' | 'EXT ERROR') => void
+  setFpsLimit: (fps: number) => void
 }
 
 const DEFAULT_PARAMS: PresetParams = {
@@ -164,7 +168,11 @@ function loadSavedPresets(): SavedPreset[] {
 }
 
 function persistPresets(presets: SavedPreset[]) {
-  localStorage.setItem('viz-presets', JSON.stringify(presets))
+  // Best-effort: private mode / quota exhaustion throw here, and failing to
+  // persist a look must never break the action that saved it.
+  try {
+    localStorage.setItem('viz-presets', JSON.stringify(presets))
+  } catch { /* in-memory state stays authoritative */ }
 }
 
 export const useStore = create<Store>((set, get) => ({
@@ -194,6 +202,7 @@ export const useStore = create<Store>((set, get) => ({
   bratKaraoke: false,
   amFlip: false,
   extensionStatus: '' as '' | 'EXT LIVE' | 'EXT SILENT' | 'EXT READY' | 'EXT ERROR',
+  fpsLimit: 0,
 
   setCurrentPreset: (p) => set({ currentPreset: p }),
   setParam: (key, value) =>
@@ -233,6 +242,7 @@ export const useStore = create<Store>((set, get) => ({
   setBratKaraoke: (b) => set({ bratKaraoke: b }),
   setAmFlip: (b) => set({ amFlip: b }),
   setExtensionStatus: (s) => set({ extensionStatus: s }),
+  setFpsLimit: (fps) => set({ fpsLimit: fps }),
 
   savePreset: (name) => {
     const { currentPreset, savedPresets } = get()

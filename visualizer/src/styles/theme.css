@@ -1375,10 +1375,10 @@ input[type="range"]::-moz-range-thumb {
     "Segoe UI",
     sans-serif;
 
-  font-size: 32px;
+  font-size: 34px;
   font-weight: 700;
   line-height: 1.25;
-  letter-spacing: -0.015em;
+  letter-spacing: -0.010em;
 
   text-align: left;
   text-wrap: balance;
