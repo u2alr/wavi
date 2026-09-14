@@ -81,6 +81,9 @@ export default function BratLyrics({
   const trackId = track?.id ?? null
   const trackTitle = track?.name ?? ''
   const trackArtist = track?.artists?.[0]?.name
+  const trackAlbum = track?.album?.name
+  const trackDurationMs = track?.duration_ms ?? 0
+  const trackIsrc = track?.external_ids?.isrc
 
   // Song identity for transition resets — the fetch below resolves
   // asynchronously, so without a synchronous blank the old song's lines
@@ -109,8 +112,17 @@ export default function BratLyrics({
       stalePosRef.current = useStore.getState().playbackPosition
     }
 
+    // Length + ISRC are what make the lookup pick THIS recording: LRCLib
+    // matches on duration, and the ISRC pinpoints the exact release.
     const meta = trackId
-      ? { title: trackTitle, artist: trackArtist, id: trackId }
+      ? {
+          title: trackTitle,
+          artist: trackArtist,
+          album: trackAlbum,
+          duration: trackDurationMs > 0 ? trackDurationMs / 1000 : undefined,
+          id: trackId,
+          isrc: trackIsrc,
+        }
       : guessFromName(trackName)
 
     if (!meta.title) {
@@ -127,7 +139,7 @@ export default function BratLyrics({
     }).catch(() => { /* aborted */ })
 
     return () => controller.abort()
-  }, [trackId, trackName, trackTitle, trackArtist, songKey, clock])
+  }, [trackId, trackName, trackTitle, trackArtist, trackAlbum, trackDurationMs, trackIsrc, songKey, clock])
 
   // Sync snap (Spotify only — local files read audio.currentTime live
   // every frame, so seeks already follow). Snaps the private clock to the

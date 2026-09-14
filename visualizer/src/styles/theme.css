@@ -1375,7 +1375,13 @@ input[type="range"]::-moz-range-thumb {
     "Segoe UI",
     sans-serif;
 
-  font-size: 34px;
+  /*
+   * Type scales with the viewport instead of sitting at one fixed size. The
+   * 2.1vw ramp keeps windowed mode at roughly its old reading size (32–36px)
+   * across common widths; fullscreen re-derives it below, where the canvas is
+   * the whole display and the lines can afford to grow a bit larger.
+   */
+  font-size: clamp(24px, 2.1vw, 36px);
   font-weight: 700;
   line-height: 1.25;
   letter-spacing: -0.010em;
@@ -1383,7 +1389,12 @@ input[type="range"]::-moz-range-thumb {
   text-align: left;
   text-wrap: balance;
 
-  color: rgba(255, 255, 255, 0.48);
+  /*
+   * Full white on purpose: the per-line fade lives in the JS opacity ramp.
+   * A translucent base color multiplied that ramp again, which is why
+   * upcoming lyrics (0.48 x 0.48) were effectively invisible until sung.
+   */
+  color: #fff;
 
   transform-origin: left center;
 
@@ -1466,9 +1477,33 @@ input[type="range"]::-moz-range-thumb {
 
   .amb-line {
     padding-inline: 8px;
-    font-size: 32px;
+
+    /* The bottom band is height-bound (42% of the canvas), not width-bound,
+       so it gets a smaller ramp than the side column. */
+    font-size: clamp(22px, 2vw, 32px);
     line-height: 1.25;
   }
+}
+
+/*
+ * Fullscreen: the tumbler owns the entire display, so the type and the line
+ * measure grow with it instead of staying at windowed size — but only
+ * moderately: the ramp is deliberately shallower than the windowed one so
+ * fullscreen reads tighter than "windowed type scaled to the monitor", and
+ * the cap keeps 4K displays from running the same three words across the
+ * whole screen.
+ */
+.xp-window.fullscreen .amb-line {
+  font-size: clamp(26px, 1.8vw, 56px);
+
+  /* The extra block padding is part of each line's measured box, and the JS
+     spreads the stack by those measured heights — so the rhythm opens up with
+     the type instead of staying at the windowed 6px. */
+  padding-block: 12px;
+}
+
+.xp-window.fullscreen .amb-stack {
+  width: min(100%, 760px);
 }
 
 @media (prefers-reduced-motion: reduce) {

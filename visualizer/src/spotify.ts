@@ -58,6 +58,9 @@ export interface SpotifyTrack {
   duration_ms: number
   album: SpotifyAlbum
   artists: SpotifyArtist[]
+  /** Present on Web API track objects (not on SDK-built placeholders).
+   *  Pins lyric lookup to the exact recording. */
+  external_ids?: { isrc?: string }
 }
 
 export interface SpotifyPlaylist {

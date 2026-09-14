@@ -4,8 +4,8 @@ import * as THREE from 'three'
 import { useStore, presetParamsFor } from '../store'
 import { getFreqData, getSampleRate, getExtensionWaveData } from '../audio'
 import { getEmberWaveAnalyser, teardownEmberWaveAnalyser } from '../emberAnalyser'
-import { useArtGradient } from '../useArtGradient'
 import { getAnalysis, readVisualBands } from '../analyser'
+import { extractPalette, FALLBACK_PALETTE, PALETTE_STOPS, type Rgb } from '../coverPalette'
 
 
 const edgeCache = new Map<string, number[]>()
@@ -577,26 +577,31 @@ function PrismaticTempestPreset() {
   return <mesh><planeGeometry args={[viewport.width, viewport.height]} /><shaderMaterial ref={materialRef} {...shader} /></mesh>
 }
 
+// 7 log-spread engine bands (of 32, 20Hz-20kHz) feeding SandsOfTime
+// lines: ~23Hz, 59Hz, 140Hz, 331Hz, 785Hz, 2.3kHz, 10.5kHz.
+const SAND_BAND_PICKS = [1, 5, 9, 13, 17, 22, 29]
+
 function SandsOfTimePreset() {
   const viewport = useThree((state) => state.viewport)
-  // Mostly a timepiece: flow / crawl / t are INTEGRATED (never scaled off
-  // the wall clock) so changing `speed` can't jump the phase. Only treble
-  // (sparkle), transients (hit flashes) and loudness (glow) react to sound.
-  const st = useRef({ flow: 0, crawl: 0, t: 0, treble: 0, hit: 0, loud: 0, vocal: 0, sparkT: 0, glow: 0, lastGlow: -9 })
+  // Calm timepiece: flow / crawl / t are INTEGRATED (never scaled off
+  // the wall clock) so changing `speed` can't jump the phase. All audio
+  // uniforms stay frozen — nothing reacts, composition drifts on clocks.
+  const st = useRef({ flow: 0, crawl: 0, t: 0, eb: [0, 0, 0, 0, 0, 0, 0] })
 
   const material = useMemo(() => new THREE.ShaderMaterial({
     uniforms: {
       uTime: { value: 0 }, uEnergy: { value: 0 }, uBass: { value: 0 },
       uMid: { value: 0 }, uHigh: { value: 0 }, uKick: { value: 0 }, uBeat: { value: 0 },
       uFlow: { value: 0 }, uCrawl: { value: 0 },
-      uTreble: { value: 0 }, uHit: { value: 0 }, uLoud: { value: 0 }, uVocal: { value: 0 }, uSparkT: { value: 0 }, uPulse: { value: 0 },
+      uBands: { value: [0, 0, 0, 0, 0, 0, 0] },
       uSensitivity: { value: 1 }, uHueShift: { value: 200 }, uIntensity: { value: 1.5 },
       uComplexity: { value: 1 }, uAspect: { value: 1 },
     },
     vertexShader: 'varying vec2 vUv; void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
     fragmentShader: `
       varying vec2 vUv;
-      uniform float uTime,uEnergy,uBass,uMid,uHigh,uKick,uBeat,uFlow,uCrawl,uTreble,uHit,uLoud,uVocal,uSparkT,uPulse,uSensitivity,uHueShift,uIntensity,uComplexity,uAspect;
+      uniform float uTime,uEnergy,uBass,uMid,uHigh,uKick,uBeat,uFlow,uCrawl,uSensitivity,uHueShift,uIntensity,uComplexity,uAspect;
+      uniform float uBands[7];
 
       vec3 hsv2rgb(vec3 c){
         vec4 K=vec4(1.0,2.0/3.0,1.0/3.0,3.0);
@@ -610,11 +615,17 @@ function SandsOfTimePreset() {
         vec2 q = p;
         // large slow warp (diagonal drift) — bass sways width ±15%
         float sway = 1.0 + pow(clamp(uBass, 0.0, 1.0), 2.2) * 0.15;
-        q += 0.28 * sway * vec2(sin(p.y*1.15 + t*0.90),       sin(p.x*1.05 - t*0.70));
+        q += 0.34 * sway * vec2(sin(p.y*1.15 + t*0.90),       sin(p.x*1.05 - t*0.70));
         // secondary meander
-        q += 0.11 * sway * vec2(sin(p.y*2.30 - t*0.50 + 1.7), sin(p.x*2.05 + t*0.45));
+        q += 0.14 * sway * vec2(sin(p.y*2.30 - t*0.50 + 1.7), sin(p.x*2.05 + t*0.45));
         // fine ripple keeps lines organic, still smooth (no FBM jitter)
-        q += 0.045 * vec2(sin(p.y*4.10 + t*0.35 + 4.2), sin(p.x*3.85 - t*0.30));
+        q += 0.06 * vec2(sin(p.y*4.10 + t*0.35 + 4.2), sin(p.x*3.85 - t*0.30));
+        // ocean swell: two low-freq directional traveling waves, coherent roll
+        vec2 swellDir = vec2(0.834, 0.552);
+        vec2 swellNrm = vec2(-swellDir.y, swellDir.x);
+        float sw1 = sin(dot(p, swellDir)*1.40 + t*1.10);
+        float sw2 = sin(dot(p, swellDir)*2.30 - t*0.80 + dot(p, swellNrm)*1.10);
+        q += swellDir * (sw1*0.18 + sw2*0.09);
 
         float field = 0.0;
         vec2 d;
@@ -630,6 +641,10 @@ function SandsOfTimePreset() {
         d = q - vec2(-1.10, -0.85); field += 0.50 * log(dot(d,d) + 0.110);
         d = q - vec2(-1.55, -0.55); field += 0.50 * log(dot(d,d) + 0.075);
         d = q - vec2(-0.70, -1.25); field += 0.45 * log(dot(d,d) + 0.080);
+        // extra bottom-left loops: offset centers interleave with the
+        // big-circle nest instead of stacking on it
+        d = q - vec2(-1.30, -0.28); field += 0.45 * log(dot(d,d) + 0.085);
+        d = q - vec2(-0.45, -1.08); field += 0.45 * log(dot(d,d) + 0.090);
 
         // gentle global drift
         field += 0.14 * q.x + 0.08 * q.y;
@@ -665,7 +680,8 @@ function SandsOfTimePreset() {
         float dist = abs(fract(phase)-0.5);
         float aa = max(fwidth(phase), 0.001);
         float w = max(baseWidth, 0.002);
-        float line = 1.0 - smoothstep(w, w+aa, dist);
+        // soft shoulders: full core, eased falloff (no hard edge shimmer)
+        float line = 1.0 - smoothstep(w*0.7, w + aa*2.0, dist);
         // soft dash ends so segments stay disconnected
         float seg = smoothstep(0.30, 0.52, segM) * (1.0 - smoothstep(0.78, 0.98, segM)*0.85);
         return vec2(line*seg, brightM);
@@ -687,6 +703,11 @@ function SandsOfTimePreset() {
         float bass=pow(clamp(uBass,0.0,1.0),2.2);
         float mid =pow(clamp(uMid, 0.0,1.0),2.2);
         float high=pow(clamp(uHigh,0.0,1.0),2.2);
+
+        // per-line Hz: engine bands arrive normalized + enveloped.
+        // contour id -> band; silent band = dim ghost (0.1), never gone.
+        float e[7];
+        for(int i=0;i<7;i++){ e[i]=pow(clamp(uBands[i],0.0,1.0),2.2); }
 
         // bass pushes outward instead of flashing: displace the sample point
         // radially, so lines shove away from center on heavy lows
@@ -710,8 +731,11 @@ function SandsOfTimePreset() {
         // flow-following sample coords: noise advected along the field
         // so width / brightness / gaps vary per streak, not per contour
         vec2 fp = w*1.6;
-        float wob1 = (fbm2(fp*2.1 + vec2(t*0.35, -t*0.28) + field*0.9)-0.5)*2.4;
-        float wob2 = (fbm2(fp*4.3 - vec2(t*0.22, t*0.30) + field*1.7)-0.5)*1.6;
+        // ocean undulation rides on fbm wobble: coherent traveling wave
+        // along swell dir so whole lines roll, not just jitter locally
+        float swellWob = sin(dot(fp, vec2(0.834, 0.552))*1.8 + t*1.2)*0.35 + sin(dot(fp, vec2(-0.552, 0.834))*2.2 - t*0.9)*0.20;
+        float wob1 = (fbm2(fp*2.1 + vec2(t*0.35, -t*0.28) + field*0.9)-0.5)*3.0 + swellWob;
+        float wob2 = (fbm2(fp*4.3 - vec2(t*0.22, t*0.30) + field*1.7)-0.5)*2.2 + swellWob*0.7;
         float thickN  = fbm2(fp*2.3 + 7.3 - field*0.5 + t*0.10);
         float brightN = fbm2(fp*1.3 + 3.1 + vec2(field*0.9, -field*0.6) - t*0.12);
         float segN1 = fbm2(fp*1.8 + vec2(t*0.25 + uCrawl, -t*0.20) + field*0.7);
@@ -736,6 +760,15 @@ function SandsOfTimePreset() {
         vec2 s1c = streakLine(field, scale, baseWidth*widthVar, wob1, segN1, bright1);
         vec2 s2 = streakLine(field*1.02 + 0.31, scale*2.0, baseWidth*widthVarFine*0.55, wob2, segN2, bright2);
 
+        // each line its own band (id from field, +3 offset so systems
+        // never share). 0.1 floor: quiet lines ghost, audio lifts to full.
+        float eb1 = e[int(mod(floor(field*scale), 7.0))];
+        float eb2 = e[int(mod(floor((field*1.02 + 0.31)*scale*2.0) + 3.0, 7.0))];
+        float g1 = 0.1 + 0.9*smoothstep(0.02, 0.35, eb1);
+        float g2 = 0.1 + 0.9*smoothstep(0.02, 0.35, eb2);
+        s1c *= g1;
+        s2 *= g2;
+
         float lg = max(s1c.x, s2.x*0.50);
         lg *= raspMask;
         float bright = max(s1c.y, s2.y*0.8);
@@ -746,34 +779,25 @@ function SandsOfTimePreset() {
         vec3 goldCore = vec3(1.00, 0.83, 0.60);
         vec3 goldMid  = vec3(0.78, 0.55, 0.32);
         vec3 ridge = mix(goldMid, goldCore, shade);
-        float peak = smoothstep(0.65, 1.0, max(uPulse, uHit));
-        ridge = mix(ridge, vec3(1.0, 0.97, 0.92), peak*0.55);
 
         // warm near-black base
         vec3 col = vec3(0.020, 0.016, 0.012);
 
-        // soft radial bloom at the dominant vortex, follows loudness
-        vec2 gd = w - vec2(0.05, 0.25);
-        col += vec3(0.45, 0.30, 0.16) * exp(-dot(gd, gd)*2.5) * uPulse * 0.7;
-
         // no fog: flat response, no top fade / vignette / center glow.
-        // lines breathe up with the voice.
-        float strength = (0.45 + pow(uVocal, 1.5)*1.55) * breathe * bright;
+        float strength = 0.9 * breathe * bright;
 
         col += ridge * lg * strength;
+
+        // light flowing inside the lines: diagonal wave on the integrated
+        // flow clock, masked to lines. Per-line variation rides free on lg.
+        float flowLight = pow(0.5 + 0.5*sin(dot(w, vec2(0.83, 0.55))*6.0 - uFlow*8.0 + field*3.0), 4.0);
+        col += vec3(1.0, 0.90, 0.68) * flowLight * lg * 0.9;
 
         // shiny sand: tight crest highlight + sparse hot grains stuck to lines
         col += vec3(1.0,0.95,0.85) * pow(lg,3.0) * (0.12 + high*0.35) * breathe * (0.4 + bright);
         float cell = hash21(floor(w*230.0) + floor(field*14.0));
         col += vec3(1.0,0.90,0.70) * step(0.978, cell) * lg * 0.9;
         col += vec3(1.0,0.88,0.66) * pow(sandN, 9.0) * lg * 2.2;
-
-        // treble sparkle: short-lived bright flickers stuck to random lines,
-        // plus a highlight traveling along the field. Both wake up on hits.
-        float flSeed = hash21(floor(w*230.0) + floor(field*14.0) + floor(uSparkT*6.0));
-        col += vec3(1.0,0.96,0.88) * step(1.0 - uTreble*0.30, flSeed) * (0.25 + uHit) * lg * 1.6;
-        float trav = pow(0.5 + 0.5*sin(field*5.0 - uSparkT*14.0), 8.0);
-        col += vec3(1.0,0.93,0.78) * trav * (0.15 + uHit*0.85) * lg * 0.8;
 
         // light film tooth so blacks stay sandy, not milky
         float g = fract(sin(dot(vUv*vec2(1243.0,1179.0)+mod(uTime,10.0), vec2(12.9898,78.233)))*43758.5453);
@@ -797,30 +821,22 @@ function SandsOfTimePreset() {
     const u = material.uniforms
     const s = st.current
 
-    // followers: treble shimmer, transient-hit envelope, loudness glow.
-    // Everything else (bass/energy/kick/beat) stays frozen on purpose.
-    const fol = (cur: number, tgt: number, atk: number, rel: number) =>
-      cur + (tgt - cur) * (1 - Math.exp(-dt * (tgt > cur ? atk : rel)))
-
-    s.treble = fol(s.treble, Math.min(((a.presence + a.treble + a.air) / 3) * sensitivity, 1), 10, 4)
-    s.hit = fol(s.hit, Math.min(Math.max(a.transient, a.hatEnergy * 0.8, a.snareEnergy * 0.8) * sensitivity, 1), 16, 6)
-    s.loud = fol(s.loud, Math.min(Math.max(a.kickEnergy, (a.bass + a.subBass * 0.5) * 0.8) * sensitivity, 1), 8, 4)
-    s.vocal = fol(s.vocal, Math.min(a.vocalPresence * sensitivity, 1), 6, 4)
-
-    // one-shot glow pulse per kick onset: 1 glow = 1 beat. Sustained bass
-    // holds no glow — re-arm gate + min gap stop plateau retrigger.
-    if (a.kickEnergy > 0.5 && s.glow < 0.35 && s.t - s.lastGlow > 0.18) {
-      s.glow = 1
-      s.lastGlow = s.t
+    // per-line Hz feed: engine bands are already normalized + enveloped.
+    // JS follower (attack 6 / release 2.5, frame-rate independent) takes
+    // the snap off: attacks soften, decays trail smoothly.
+    const arr = u.uBands.value as number[]
+    const eb = s.eb
+    for (let i = 0; i < 7; i++) {
+      const target = Math.min(a.bands[SAND_BAND_PICKS[i]] * sensitivity, 1)
+      const rate = target > eb[i] ? 6 : 2.5
+      eb[i] += (target - eb[i]) * (1 - Math.exp(-dt * rate))
+      arr[i] = eb[i]
     }
-    s.glow *= Math.exp(-dt * 4)
 
     // integrated clocks: constant rate, phase never jumps.
-    // highlight travel speeds up on hits.
-    s.flow  += dt * speed * 0.045
+    s.flow  += dt * speed * 0.06
     s.crawl += dt * 0.035
     s.t     += dt * speed
-    s.sparkT += dt * (0.4 + s.hit * 4.0)
 
     u.uTime.value = s.t
     u.uEnergy.value = 0.55
@@ -831,12 +847,6 @@ function SandsOfTimePreset() {
     u.uBeat.value = 0
     u.uFlow.value = s.flow
     u.uCrawl.value = s.crawl
-    u.uTreble.value = s.treble
-    u.uHit.value = s.hit
-    u.uLoud.value = s.loud
-    u.uVocal.value = s.vocal
-    u.uPulse.value = s.glow
-    u.uSparkT.value = s.sparkT
     u.uIntensity.value = intensity
     u.uComplexity.value = complexity
     u.uAspect.value = viewport.width / viewport.height
@@ -1763,38 +1773,83 @@ function CanvasAmbientPreset() {
 
   return <mesh><planeGeometry args={[viewport.width, viewport.height]} /><shaderMaterial ref={materialRef} {...shader} /></mesh>
 }
-const hexToRgb01 = (hex: string): [number, number, number] => {
-  const n = parseInt(hex.slice(1), 16)
-  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255]
-}
+// Side of the downscaled cover used as the ambient bleed source. Small on
+// purpose: at this size the GPU's bilinear upscale IS the blur.
+const BLEED_TEX_SIZE = 24
 
-// Fallback palette when no cover is sampled (warm brown, like v1).
-const FALLBACK_PALETTE: [number, number, number][] = [
-  [0.30, 0.19, 0.11],
-  [0.20, 0.12, 0.07],
-  [0.11, 0.07, 0.05],
-]
+/**
+ * Cover preview + palette in one pass for the Canvas Ambient 2 background: a
+ * center-cropped 24px copy of the cover (the GPU's bilinear upscale of it is
+ * the heavy blur) and the vivid palette read off those same pixels. One
+ * downscale, one upload, one read-back per track. Null when the image or a 2D
+ * context is unavailable; `palette` alone goes null when the canvas is
+ * tainted (no CORS), in which case the caller keeps its current colors.
+ */
+function makeCoverPreview(img: HTMLImageElement | undefined | null): {
+  tex: THREE.CanvasTexture
+  palette: Rgb[] | null
+} | null {
+  if (!img?.width || !img?.height) return null
+  const canvas = document.createElement('canvas')
+  canvas.width = BLEED_TEX_SIZE
+  canvas.height = BLEED_TEX_SIZE
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })
+  if (!ctx) return null
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = 'high'
+  // Center crop to a square so the shader can cover-fit without distorting.
+  const side = Math.min(img.width, img.height)
+  ctx.drawImage(
+    img,
+    (img.width - side) / 2, (img.height - side) / 2, side, side,
+    0, 0, BLEED_TEX_SIZE, BLEED_TEX_SIZE,
+  )
+  const tex = new THREE.CanvasTexture(canvas)
+  tex.colorSpace = THREE.SRGBColorSpace
+  tex.minFilter = THREE.LinearFilter
+  tex.magFilter = THREE.LinearFilter
+  tex.generateMipmaps = false
+  tex.wrapS = THREE.ClampToEdgeWrapping
+  tex.wrapT = THREE.ClampToEdgeWrapping
+
+  let palette: Rgb[] | null = null
+  try {
+    palette = extractPalette(ctx.getImageData(0, 0, BLEED_TEX_SIZE, BLEED_TEX_SIZE).data)
+  } catch {
+    // Tainted canvas (cover served without CORS) — bg keeps its palette.
+    palette = null
+  }
+  return { tex, palette }
+}
 
 /**
  * Canvas Ambient 2 — calm Apple Music-style gradient. Artwork card shows
- * the album cover directly (no canvas video); the background is a slow
- * self-flowing domain-warped noise tinted by the sampled cover palette
- * (useArtGradient). No audio reactivity by design — palette lerps toward
- * each new cover (~1.5s) so track changes crossfade instead of cutting.
+ * the album cover directly (no canvas video); the background combines the
+ * cover's own vivid palette (a smooth five-stop ramp) with a warped, heavily
+ * blurred bleed of the cover itself (makeCoverPreview), so the wash is
+ * literally the album's colors and travels with the music's flow field.
+ * No audio reactivity by design — the palette lerps toward each new cover
+ * (~1.5s) so track changes crossfade instead of cutting.
  */
 function CanvasAmbient2Preset() {
   const materialRef = useRef<THREE.ShaderMaterial>(null!)
   const viewport = useThree((s) => s.viewport)
   const track = useStore((s) => s.spotifyCurrentTrack)
   const coverUrl = track?.album?.images?.[0]?.url
-  const artGradient = useArtGradient(coverUrl)
-  // Cover texture loaded directly (v1 keeps using useCanvasSource).
-  const [art, setArt] = useState<{ tex: THREE.Texture | null; aspect: number }>({ tex: null, aspect: 1 })
+  // Cover texture loaded directly (v1 keeps using useCanvasSource), plus the
+  // 24px preview + palette behind the ambient wash (see makeCoverPreview).
+  const [art, setArt] = useState<{
+    tex: THREE.Texture | null
+    bleed: THREE.Texture | null
+    palette: Rgb[] | null
+    aspect: number
+  }>({ tex: null, bleed: null, palette: null, aspect: 1 })
   useEffect(() => {
     let dead = false
     let loaded: THREE.Texture | null = null
+    let bleedLoaded: THREE.CanvasTexture | null = null
     if (!coverUrl) {
-      setArt({ tex: null, aspect: 1 })
+      setArt({ tex: null, bleed: null, palette: null, aspect: 1 })
       return
     }
     new THREE.TextureLoader().load(coverUrl, (t) => {
@@ -1804,21 +1859,30 @@ function CanvasAmbient2Preset() {
       }
       t.colorSpace = THREE.SRGBColorSpace
       const img = t.image as HTMLImageElement | undefined
+      const preview = makeCoverPreview(img)
       loaded = t
-      setArt({ tex: t, aspect: img?.width && img?.height ? img.width / img.height : 1 })
+      bleedLoaded = preview?.tex ?? null
+      setArt({
+        tex: t,
+        bleed: preview?.tex ?? null,
+        palette: preview?.palette ?? null,
+        aspect: img?.width && img?.height ? img.width / img.height : 1,
+      })
     })
     return () => {
       dead = true
       loaded?.dispose()
+      bleedLoaded?.dispose()
     }
   }, [coverUrl])
   // Displayed palette — lerped toward the sampled target every frame.
-  const paletteRef = useRef<[number, number, number][]>(FALLBACK_PALETTE.map((c) => [...c] as [number, number, number]))
+  const paletteRef = useRef<Rgb[]>(FALLBACK_PALETTE.map((c) => [...c] as Rgb))
 
   const shader = useMemo(() => ({
     uniforms: {
       uTime: { value: 0 }, uAspect: { value: 1 },
       uTex: { value: null as THREE.Texture | null }, uHasTex: { value: 0 },
+      uBleedTex: { value: null as THREE.Texture | null }, uHasBleed: { value: 0 },
       uArtAspect: { value: 1 },
       uArtSize: { value: 0.58 },
       uArtX: { value: -0.88 },       // left half — lyrics live on the right
@@ -1828,17 +1892,23 @@ function CanvasAmbient2Preset() {
       uArtDim: { value: 3.0 },
       uArtSaturation: { value: 0.75 },
       uArtContrast: { value: 0.9 },
-      uPalA: { value: new THREE.Vector3(...FALLBACK_PALETTE[0]) },
-      uPalB: { value: new THREE.Vector3(...FALLBACK_PALETTE[1]) },
-      uPalC: { value: new THREE.Vector3(...FALLBACK_PALETTE[2]) },
+      uBgZoom: { value: 2.1 },       // bleed zoom (1 = cover-fit · 2+ = abstract)
+      uBgBright: { value: 2.2 },     // bleed brightness (samples arrive linear)
+      uBgSat: { value: 1.15 },       // bleed saturation (1 = untouched)
+      uBgWarp: { value: 0.09 },      // how far the field warps the bleed (uv)
+      uBgBleed: { value: 0.85 },     // 1 = cover bleed only · 0 = palette only
+      uBleedTexel: { value: 1 / BLEED_TEX_SIZE },
+      uPal: { value: FALLBACK_PALETTE.map((c) => new THREE.Vector3(...c)) },
     },
     vertexShader: 'varying vec2 vUv; void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
     fragmentShader: `
       varying vec2 vUv;
       uniform float uTime,uAspect,uHasTex,uArtAspect,uArtSize,uArtX,uArtY,uRadius,uShadow;
-      uniform float uArtDim,uArtSaturation,uArtContrast;
-      uniform vec3 uPalA,uPalB,uPalC;
+      uniform float uArtDim,uArtSaturation,uArtContrast,uHasBleed,uBgZoom,uBgBright,uBgSat;
+      uniform float uBgWarp,uBgBleed,uBleedTexel;
+      uniform vec3 uPal[5];
       uniform sampler2D uTex;
+      uniform sampler2D uBleedTex;
 
       float rbox(vec2 p, vec2 b, float r){
         vec2 q=abs(p)-b+r;
@@ -1850,38 +1920,72 @@ function CanvasAmbient2Preset() {
         return mix(vec3(gray), col, sat);
       }
 
-      float hash21(vec2 p){
-        p=fract(p*vec2(234.34,435.345));
-        p+=dot(p,p+34.23);
-        return fract(p.x*p.y);
-      }
-
-      float vnoise(vec2 p){
-        vec2 i=floor(p), f=fract(p);
-        vec2 u=f*f*(3.0-2.0*f);
-        float a=hash21(i), b=hash21(i+vec2(1.0,0.0));
-        float c=hash21(i+vec2(0.0,1.0)), d=hash21(i+vec2(1.0,1.0));
-        return mix(mix(a,b,u.x),mix(c,d,u.x),u.y);
-      }
-
-      float fbm(vec2 p){
-        float v=0.0, a=0.5;
-        for(int i=0;i<7;i++){ v+=a*vnoise(p); p*=2.03; a*=0.5; }
-        return v;
-      }
-
       void main(){
         vec2 p=(vUv-0.5)*2.0; p.x*=uAspect;
 
-        // Calm ambient background — domain-warped fbm drifting on its
-        // own clock. Palette comes from the cover, nothing from audio.
+        // Blurred-cover bleed background, Apple Music style, built from lava-
+        // lamp lumps instead of noise:
+        //   lumps  — a handful of slow-drifting metaballs, one palette stop
+        //            each. Summed Gaussian influence, no octaves and no domain
+        //            warping, so shapes stay rounded and soft-centred while
+        //            they swell, merge and split. The wide smoothstep below is
+        //            the blur: edges go out of focus rather than fray to smoke.
+        //            Carries the whole bg with no cover, and tints it when
+        //            there is one.
+        //   bleed  — the 24px cover preview, cover-fit then zoomed past the
+        //            frame, drifting so the colors move with the lumps instead
+        //            of sliding over them. The preview is small enough that the
+        //            GPU's bilinear upscale is most of the blur; ring taps at
+        //            whole texels mop up the last bilinear facets.
+        // Nothing from audio.
         float t=uTime*0.06;
-        vec2 q=p*1.4;
-        vec2 warp=vec2(fbm(q+vec2(t*0.4,t*0.2)), fbm(q+vec2(-t*0.3,t*0.5)));
-        float n=fbm(q*1.6+warp*0.9+vec2(t*0.25,-t*0.15));
-        vec3 bg=mix(uPalA,uPalB,smoothstep(0.25,0.78,n));
-        bg=mix(bg,uPalC,smoothstep(0.5,0.95,n)*0.4);
-        float vig=1.0-smoothstep(0.4,2.6,length(p))*0.5;
+        vec2 q=p*vec2(0.66,1.02);
+
+        vec3 lumpCol=vec3(0.0);
+        float lumpW=0.0;
+        float field=0.0;
+        for(int i=0;i<5;i++){
+          float fi=float(i);
+          // each lump wanders on its own slow lissajous so they never lockstep
+          vec2 c=vec2(sin(t*(0.13+fi*0.021)+fi*2.4)*0.62,
+                      cos(t*(0.11+fi*0.017)+fi*1.7)*0.48);
+          // breathing radius: lumps swell and shrink like wax in the tube
+          float r=0.36+0.07*sin(t*0.09+fi*1.9);
+          float dx=q.x-c.x, dy=q.y-c.y;
+          float w=exp(-(dx*dx+dy*dy)/(r*r));
+          field+=w;
+          lumpCol+=uPal[i]*w;
+          lumpW+=w;
+        }
+        lumpCol/=max(lumpW,0.0001);
+        float lumps=smoothstep(0.40,1.30,field);
+
+        // base wash under the lumps: smooth palette ramp, no noise at all
+        float ramp=clamp(0.5+0.5*dot(q,vec2(0.34,0.52)),0.0,1.0);
+        vec3 palBg=mix(uPal[0],uPal[1],smoothstep(0.0,0.8,ramp));
+
+        // cover the viewport with the square preview, zoom past it, then drift
+        vec2 coverScale=uAspect>1.0 ? vec2(1.0/uAspect,1.0) : vec2(1.0,uAspect);
+        float zb=uBgZoom*(1.0+0.02*sin(uTime*0.05));
+        vec2 pan=vec2(sin(uTime*0.07),cos(uTime*0.061))*0.02;
+        // noise-free drift for the sample point: structure, not smoke
+        vec2 warp=0.5+0.5*vec2(sin(q.y*0.9+t*0.7),cos(q.x*0.8-t*0.6));
+        vec2 buv=(vUv-0.5)*(coverScale/zb)+0.5+pan+(warp-0.5)*uBgWarp;
+        float tx=uBleedTexel;
+        vec3 bleed=texture2D(uBleedTex,buv).rgb*0.30
+          +(texture2D(uBleedTex,buv+vec2(tx,0.0)).rgb+texture2D(uBleedTex,buv-vec2(tx,0.0)).rgb
+          +texture2D(uBleedTex,buv+vec2(0.0,tx)).rgb+texture2D(uBleedTex,buv-vec2(0.0,tx)).rgb)*0.10
+          +(texture2D(uBleedTex,buv+vec2(tx,tx)).rgb+texture2D(uBleedTex,buv-vec2(tx,tx)).rgb
+          +texture2D(uBleedTex,buv+vec2(tx,-tx)).rgb+texture2D(uBleedTex,buv+vec2(-tx,tx)).rgb)*0.075;
+        bleed=adjustSaturation(bleed,uBgSat)*uBgBright;
+        bleed*=0.96+0.08*warp.y;
+
+        // palette builds the lumps, the cover stays in the gaps between them
+        vec3 bg=mix(palBg,lumpCol,lumps);
+        bg+=lumpCol*pow(lumps,2.0)*0.22;                  // soft lit cores
+        bg=mix(bg,bleed*(0.65+0.55*lumps),uHasBleed*uBgBleed*0.72);
+        // vignette: corners/edges fall away, matching the reference frame
+        float vig=1.0-smoothstep(0.35,2.6,length(p))*0.45;
         bg*=vig;
 
         // artwork card (same treatment as v1). Split layout on wide
@@ -1918,17 +2022,16 @@ function CanvasAmbient2Preset() {
   useEffect(() => {
     const u = materialRef.current.uniforms
     u.uTex.value = art.tex
+    u.uBleedTex.value = art.bleed
     u.uHasTex.value = art.tex ? 1 : 0
+    u.uHasBleed.value = art.bleed ? 1 : 0
     u.uArtAspect.value = art.aspect
   }, [art])
 
-  const targetPalette = useMemo<[number, number, number][]>(
-    () =>
-      artGradient
-        ? [hexToRgb01(artGradient.g1), hexToRgb01(artGradient.g2), hexToRgb01(artGradient.g3)]
-        : FALLBACK_PALETTE,
-    [artGradient],
-  )
+  // Palette read off the cover's own pixels; the muted useArtGradient stops
+  // belong to the player box, not to a full-screen wash, so this preset runs
+  // on its own vivid extraction (falling back while nothing has loaded).
+  const targetPalette = art.palette ?? FALLBACK_PALETTE
 
   useFrame((state, delta) => {
     const { speed } = presetParamsFor(useStore.getState())
@@ -1938,10 +2041,10 @@ function CanvasAmbient2Preset() {
     // Exponential ease toward the sampled palette — gentle crossfade.
     const k = 1 - Math.exp(-Math.min(delta, 0.1) * 2.0)
     const cur = paletteRef.current
-    const keys = ['uPalA', 'uPalB', 'uPalC'] as const
-    for (let i = 0; i < 3; i++) {
+    const pal = u.uPal.value as THREE.Vector3[]
+    for (let i = 0; i < PALETTE_STOPS; i++) {
       for (let c = 0; c < 3; c++) cur[i][c] += (targetPalette[i][c] - cur[i][c]) * k
-      ;(u[keys[i]].value as THREE.Vector3).set(cur[i][0], cur[i][1], cur[i][2])
+      pal[i].set(cur[i][0], cur[i][1], cur[i][2])
     }
   })
 

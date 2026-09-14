@@ -8,11 +8,13 @@ import {
 import { motion, useReducedMotion } from 'motion/react'
 import { useStore } from '../store'
 import { getAudioElement } from '../audio'
-import { fetchLyrics, guessFromName, type LyricLine } from '../lyrics'
+import { cachedLyrics, fetchLyrics, guessFromName, type LyricLine } from '../lyrics'
 import { usePlaybackTracker } from '../usePlaybackTracker'
 
 const SEEK_SNAP_MS = 2000
-const LINE_LEAD_SECONDS = 0.3
+// A line lights up this long BEFORE its timestamp, so the words are already
+// on screen and legible when the vocal actually lands.
+const LINE_LEAD_SECONDS = 0.5
 
 const PREVIOUS_LINES = 1
 const NEXT_LINES = 4
@@ -58,6 +60,9 @@ export default function AmbientLyrics({
   const trackId = track?.id ?? null
   const trackTitle = track?.name ?? ''
   const trackArtist = track?.artists?.[0]?.name
+  const trackAlbum = track?.album?.name
+  const trackDurationMs = track?.duration_ms ?? 0
+  const trackIsrc = track?.external_ids?.isrc
 
   const { currentTime, resync } = usePlaybackTracker(
     playing,
@@ -127,14 +132,35 @@ export default function AmbientLyrics({
   useEffect(() => {
     const controller = new AbortController()
 
+    // Length + ISRC are what make the lookup pick THIS recording: LRCLib
+    // matches on duration, and the ISRC pinpoints the exact release.
+    const meta = trackId
+      ? {
+          title: trackTitle,
+          artist: trackArtist,
+          album: trackAlbum,
+          duration: trackDurationMs > 0 ? trackDurationMs / 1000 : undefined,
+          id: trackId,
+          isrc: trackIsrc,
+        }
+      : guessFromName(trackName)
+
     const changed =
       lastSongKeyRef.current !== songKey
+
+    /*
+     * Already looked up (prefetched ahead of the queue, or played before):
+     * the lyrics are on screen from the first frame, so nothing about the
+     * song's start reads as "loading".
+     */
+    const warm = changed ? cachedLyrics(meta) : null
 
     if (changed) {
       lastSongKeyRef.current = songKey
 
-      setLines([])
-      setFetched(false)
+      setLines(warm ? warm.lines : [])
+      setLyricSynced(warm ? warm.synced : true)
+      setFetched(Boolean(warm))
       setHeights(new Map())
 
       previousActiveIndexRef.current = -1
@@ -145,20 +171,15 @@ export default function AmbientLyrics({
         useStore.getState().playbackPosition
     }
 
-    const meta = trackId
-      ? {
-          title: trackTitle,
-          artist: trackArtist,
-          id: trackId,
-        }
-      : guessFromName(trackName)
-
     if (!meta.title) {
       setLines([])
       setFetched(true)
 
       return () => controller.abort()
     }
+
+    // Cache hit handled above — keep what's already on screen.
+    if (warm) return () => controller.abort()
 
     fetchLyrics(meta, controller.signal)
       .then((result) => {
@@ -181,9 +202,51 @@ export default function AmbientLyrics({
     trackName,
     trackTitle,
     trackArtist,
+    trackAlbum,
+    trackDurationMs,
+    trackIsrc,
     songKey,
     resync,
   ])
+
+  /*
+   * Warm lyrics AHEAD of playback: this position and the next two tracks are
+   * looked up while nothing is waiting on them, so starting, skipping or
+   * auto-advancing into a song never sits through a network round-trip. The
+   * cache hit is synchronous, which is what lets the fetch effect above open
+   * straight on lyrics. Fire-and-forget: it only writes the lyrics cache, so
+   * an unmount or a skipped track costs nothing. Also runs right after a
+   * playlist loads (index 0, nothing playing yet), so the first press of play
+   * is warm too. Skipped while the index is unknown (-1 = the track advanced
+   * outside the loaded list).
+   */
+  const spotifyTracks = useStore((s) => s.spotifyTracks)
+  const spotifyIndex = useStore((s) => s.spotifyIndex)
+  const prefetchedIdsRef = useRef(new Set<string>())
+
+  useEffect(() => {
+    if (!active || spotifyIndex < 0 || !spotifyTracks.length) return
+
+    for (const offset of [0, 1, 2]) {
+      const next =
+        spotifyTracks[(spotifyIndex + offset) % spotifyTracks.length]
+
+      // The playing track is already being fetched by the effect above.
+      if (!next || next.id === trackId) continue
+      if (prefetchedIdsRef.current.has(next.id)) continue
+
+      prefetchedIdsRef.current.add(next.id)
+
+      fetchLyrics({
+        title: next.name,
+        artist: next.artists?.[0]?.name,
+        album: next.album?.name,
+        duration: next.duration_ms > 0 ? next.duration_ms / 1000 : undefined,
+        id: next.id,
+        isrc: next.external_ids?.isrc,
+      }).catch(() => { /* best-effort */ })
+    }
+  }, [active, trackId, spotifyIndex, spotifyTracks])
 
   /*
    * Keep lyrics synchronized with Spotify.
@@ -298,20 +361,29 @@ export default function AmbientLyrics({
    * Only render one previous and four upcoming lyrics.
    */
   const visibleLines = useMemo(() => {
-    if (currentIndex < 0) return []
+    if (currentIndex >= 0) {
+      const start = Math.max(
+        0,
+        currentIndex - PREVIOUS_LINES,
+      )
 
-    const start = Math.max(
-      0,
-      currentIndex - PREVIOUS_LINES,
-    )
+      const end = Math.min(
+        lines.length,
+        currentIndex + NEXT_LINES + 1,
+      )
 
-    const end = Math.min(
-      lines.length,
-      currentIndex + NEXT_LINES + 1,
-    )
+      return lines.slice(start, end)
+    }
 
-    return lines.slice(start, end)
-  }, [lines, currentIndex])
+    /*
+     * Intro: nothing has been sung yet. Showing the upcoming lines here is
+     * the difference between lyrics that appear with the first vocal and
+     * lyrics that are already on screen when the track opens.
+     */
+    if (ended) return []
+
+    return lines.slice(0, NEXT_LINES + 1)
+  }, [lines, currentIndex, ended])
 
   const readVisibleHeights = () => {
     const nextHeights = new Map<number, number>()
@@ -420,14 +492,19 @@ export default function AmbientLyrics({
   const getDistance = (index: number) =>
     index - currentIndex
 
+  /*
+   * Upcoming lines stay genuinely readable (the reference keeps them a touch
+   * under full strength) so the words are pre-read before they are sung,
+   * instead of fading up out of nothing at the timestamp.
+   */
   const getOpacity = (distance: number) => {
     if (distance === 0) return 1
     if (distance === -1) return 0
-    if (distance === 1) return 0.48
-    if (distance === 2) return 0.25
-    if (distance === 3) return 0.12
+    if (distance === 1) return 0.55
+    if (distance === 2) return 0.34
+    if (distance === 3) return 0.2
 
-    return 0.045
+    return 0.12
   }
 
   const getScale = (distance: number) => {
@@ -444,12 +521,12 @@ export default function AmbientLyrics({
     const d = Math.abs(distance)
 
     if (d === 0) return 0
-    if (d === 1) return 0.25
-    if (d === 2) return 0.6
-    if (d === 3) return 1
-    if (d === 4) return 1.5
+    if (d === 1) return 0.2
+    if (d === 2) return 0.5
+    if (d === 3) return 0.9
+    if (d === 4) return 1.3
 
-    return 2
+    return 1.8
   }
 
   const getHeight = (line: LyricLine) =>
@@ -482,7 +559,44 @@ export default function AmbientLyrics({
   const getYPositions = () => {
     const positions = new Map<number, number>()
 
-    if (currentIndex < 0) return positions
+    /*
+     * Intro: lay the opening lines out below the (still empty) active slot,
+     * with the same distance/opacity ramp they'll keep while they scroll up.
+     * Distances mirror getDistance() with currentIndex === -1, so the first
+     * line lifts into place instead of jumping when it is finally sung.
+     */
+    if (currentIndex < 0) {
+      if (ended || !lines.length) return positions
+
+      const first = lines[0]
+      let previousY = CURRENT_RAISE
+      let previousVisualHeight = getVisualHeight(first, 0)
+
+      const introEnd = Math.min(lines.length, NEXT_LINES + 1)
+
+      for (let i = 0; i < introEnd; i++) {
+        const line = lines[i]
+        const distance = i + 1
+
+        const visualHeight = getVisualHeight(
+          line,
+          distance,
+        )
+
+        const y =
+          previousY +
+          previousVisualHeight / 2 +
+          LINE_GAP +
+          visualHeight / 2
+
+        positions.set(line.start, y)
+
+        previousY = y
+        previousVisualHeight = visualHeight
+      }
+
+      return positions
+    }
 
     const currentLine =
       lines[currentIndex]
@@ -587,15 +701,27 @@ export default function AmbientLyrics({
       currentIndex
   }, [currentIndex])
 
+  /*
+   * The scroll stays a spring, but brightness/scale/blur snap in ~0.2s:
+   * a line has to be legible the moment it becomes current, not still
+   * catching up while the vocal is already singing it.
+   */
+  const glide = {
+    type: 'spring' as const,
+    stiffness: 170,
+    damping: 28,
+    mass: 0.75,
+  }
+
   const transition = reduceMotion
     ? {
         duration: 0,
       }
     : {
-        type: 'spring' as const,
-        stiffness: 170,
-        damping: 28,
-        mass: 0.75,
+        y: glide,
+        opacity: { duration: 0.2, ease: 'easeOut' as const },
+        scale: { duration: 0.24, ease: 'easeOut' as const },
+        filter: { duration: 0.2, ease: 'easeOut' as const },
       }
 
   if (!active) return null
@@ -603,22 +729,19 @@ export default function AmbientLyrics({
   return (
     <div className="amb-lyrics">
       <div className="amb-tumbler">
-        {!fetched ? (
-          <motion.div
-            className="amb-status"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 0.45 }}
-          >
-            ...
-          </motion.div>
-        ) : lines.length === 0 ? (
-          <motion.div
-            className="amb-status"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 0.45 }}
-          >
-            no lyrics for this track
-          </motion.div>
+        {/* While a lookup is in flight the tumbler stays empty — a "..."
+            placeholder at the top of a song reads as broken lyrics, and with
+            the prefetch above it is almost never seen. */}
+        {lines.length === 0 ? (
+          fetched ? (
+            <motion.div
+              className="amb-status"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.45 }}
+            >
+              no lyrics for this track
+            </motion.div>
+          ) : null
         ) : ended ? null : (
           <div className="amb-stack">
             {visibleLines.map((line) => {
@@ -637,11 +760,15 @@ export default function AmbientLyrics({
               const isBottom =
                 distance === NEXT_LINES
 
-              const y =
+              const layoutY =
                 yPositions.get(line.start) ??
                 CURRENT_RAISE +
                   distance *
                     BASE_LINE_HEIGHT
+
+              // The line that just lost the slot simply fades in place as the
+              // stack scrolls on — no extra upward travel of its own.
+              const y = layoutY
 
               /*
                * A newly introduced bottom lyric starts at its final
@@ -708,8 +835,7 @@ export default function AmbientLyrics({
                     )}px)`,
                   }}
                   transition={
-                    initialBottom &&
-                    !reduceMotion
+                    initialBottom && !reduceMotion
                       ? {
                           y: {
                             duration: 0,
