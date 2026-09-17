@@ -126,6 +126,10 @@ export default function BratLyrics({
       : guessFromName(trackName)
 
     if (!meta.title) {
+      // Blanking synchronously is the point: the lookup below is async, so
+      // without this the previous song's lines stay mounted and the RAF loop
+      // matches the new song's position against them.
+      // oxlint-disable-next-line react/set-state-in-effect -- song-key reset, not a render side effect
       setLines([])
       setKey(-1)
       return () => controller.abort()
@@ -162,7 +166,7 @@ export default function BratLyrics({
     if (Math.abs(clock.current - playbackPosition) > threshold) {
       clock.resync(playbackPosition)
     }
-  }, [playbackPosition, trackId, playing, lyricSynced])
+  }, [playbackPosition, trackId, playing, lyricSynced, clock])
 
   // Resume-edge snap: no SDK position arrives exactly at resume, so catch
   // the transition itself instead of waiting for the next event.
@@ -182,7 +186,7 @@ export default function BratLyrics({
     if (Math.abs(clock.current - sdkPos) > threshold) {
       clock.resync(sdkPos)
     }
-  }, [playing, trackId])
+  }, [playing, trackId, clock])
 
   // Word windows per line. With the updated lyrics module this is a
   // passthrough for `line.words` (real LRCLib/NetEase word timing) and
@@ -227,7 +231,7 @@ export default function BratLyrics({
     }
     rafId = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(rafId)
-  }, [active, lines, wordLines, playing, trackId, variant])
+  }, [active, lines, wordLines, playing, trackId, variant, clock])
 
   // Static typography — no audio reactivity. (Blur values preserve the
   // original resting look.)

@@ -1653,6 +1653,10 @@ function AM2Preset() {
 
 function useCanvasSource() {
   const spotifyCurrentTrack = useStore((s) => s.spotifyCurrentTrack)
+  // Primitive identity for the effect below: the store hands out a fresh track
+  // OBJECT on every SDK state event, so depending on the object would restart
+  // the canvas lookup — and reload the video — mid-track.
+  const trackId = spotifyCurrentTrack?.id ?? null
   const [source, setSource] = useState<{ tex: THREE.Texture | null; aspect: number }>({ tex: null, aspect: 1 })
 
   useEffect(() => {
@@ -1683,12 +1687,14 @@ function useCanvasSource() {
     }
 
     ;(async () => {
-      const track = spotifyCurrentTrack
-      if (!track) return
+      // Read the track at call time; it is used only for the album-art fallback,
+      // while trackId above carries the effect's identity.
+      const track = useStore.getState().spotifyCurrentTrack
+      if (!trackId) return
 
       try {
         // 🪄 Just fetch your own local path! The proxy handles the rest.
-        const res = await fetch(`/api/canvas?trackId=${encodeURIComponent(track.id)}`)
+        const res = await fetch(`/api/canvas?trackId=${encodeURIComponent(trackId)}`)
         if (!res.ok) throw new Error('proxy error')
         
         const data = await res.json()
@@ -1698,13 +1704,13 @@ function useCanvasSource() {
         makeVideo(canvasUrl, 9 / 16)
       } catch {
         // Fallback to album art if no canvas exists
-        const art = track.album?.images?.[0]?.url
+        const art = track?.album?.images?.[0]?.url
         if (art) makeImage(art)
       }
     })()
 
     return () => { dead = true; dispose?.() }
-  }, [spotifyCurrentTrack?.id])
+  }, [trackId])
 
   return source
 }
@@ -1865,6 +1871,18 @@ function makeCoverPreview(img: HTMLImageElement | undefined | null): {
   return { tex, palette }
 }
 
+type CoverArt = {
+  tex: THREE.Texture | null
+  bleed: THREE.Texture | null
+  palette: Rgb[] | null
+  aspect: number
+}
+
+// Nothing loaded — a track without a cover, or one that just lost it. Uniforms
+// are reset from this constant, so the effect below never has to write state
+// synchronously; the loader's cleanup disposes the previous textures.
+const NO_ART: CoverArt = { tex: null, bleed: null, palette: null, aspect: 1 }
+
 /**
  * Canvas Ambient 2 — calm Apple Music-style gradient. Artwork card shows
  * the album cover directly (no canvas video); the background combines the
@@ -1881,20 +1899,12 @@ function CanvasAmbient2Preset() {
   const coverUrl = track?.album?.images?.[0]?.url
   // Cover texture loaded directly (v1 keeps using useCanvasSource), plus the
   // 24px preview + palette behind the ambient wash (see makeCoverPreview).
-  const [art, setArt] = useState<{
-    tex: THREE.Texture | null
-    bleed: THREE.Texture | null
-    palette: Rgb[] | null
-    aspect: number
-  }>({ tex: null, bleed: null, palette: null, aspect: 1 })
+  const [art, setArt] = useState<CoverArt>(NO_ART)
   useEffect(() => {
+    if (!coverUrl) return
     let dead = false
     let loaded: THREE.Texture | null = null
     let bleedLoaded: THREE.CanvasTexture | null = null
-    if (!coverUrl) {
-      setArt({ tex: null, bleed: null, palette: null, aspect: 1 })
-      return
-    }
     new THREE.TextureLoader().load(coverUrl, (t) => {
       if (dead) {
         t.dispose()
@@ -1918,6 +1928,9 @@ function CanvasAmbient2Preset() {
       bleedLoaded?.dispose()
     }
   }, [coverUrl])
+  // While a new cover loads — or when there is none — this reads as
+  // nothing-loaded without a state write.
+  const coverArt = coverUrl ? art : NO_ART
   // Displayed palette — lerped toward the sampled target every frame.
   const paletteRef = useRef<Rgb[]>(FALLBACK_PALETTE.map((c) => [...c] as Rgb))
 
@@ -2064,17 +2077,17 @@ function CanvasAmbient2Preset() {
 
   useEffect(() => {
     const u = materialRef.current.uniforms
-    u.uTex.value = art.tex
-    u.uBleedTex.value = art.bleed
-    u.uHasTex.value = art.tex ? 1 : 0
-    u.uHasBleed.value = art.bleed ? 1 : 0
-    u.uArtAspect.value = art.aspect
-  }, [art])
+    u.uTex.value = coverArt.tex
+    u.uBleedTex.value = coverArt.bleed
+    u.uHasTex.value = coverArt.tex ? 1 : 0
+    u.uHasBleed.value = coverArt.bleed ? 1 : 0
+    u.uArtAspect.value = coverArt.aspect
+  }, [coverArt])
 
   // Palette read off the cover's own pixels; the muted useArtGradient stops
   // belong to the player box, not to a full-screen wash, so this preset runs
   // on its own vivid extraction (falling back while nothing has loaded).
-  const targetPalette = art.palette ?? FALLBACK_PALETTE
+  const targetPalette = coverArt.palette ?? FALLBACK_PALETTE
 
   useFrame((state, delta) => {
     const { speed } = presetParamsFor(useStore.getState())

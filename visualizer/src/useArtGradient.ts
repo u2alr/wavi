@@ -61,19 +61,13 @@ function luminance(r: number, g: number, b: number): number {
  * null → the opaque per-theme gray CSS fallback stays.
  */
 export function useArtGradient(coverUrl: string | undefined): ArtGradient | null {
-  const [gradient, setGradient] = useState<ArtGradient | null>(() =>
-    coverUrl ? (artGradientCache.get(coverUrl) ?? null) : null,
-  )
+  // The sampled result is kept with the URL it belongs to, and the cache is read
+  // during render: a cache hit used to arrive through an effect, costing a
+  // second render pass for every cover the sampler had already seen.
+  const [loaded, setLoaded] = useState<{ url: string; gradient: ArtGradient | null } | null>(null)
 
   useEffect(() => {
-    if (!coverUrl) {
-      setGradient(null)
-      return
-    }
-    if (artGradientCache.has(coverUrl)) {
-      setGradient(artGradientCache.get(coverUrl) ?? null)
-      return
-    }
+    if (!coverUrl || artGradientCache.has(coverUrl)) return
     let dead = false
     const img = new Image()
     img.crossOrigin = 'anonymous'
@@ -194,15 +188,15 @@ export function useArtGradient(coverUrl: string | undefined): ArtGradient | null
           dim,
         }
         rememberArtGradient(coverUrl, next)
-        if (!dead) setGradient(next)
+        if (!dead) setLoaded({ url: coverUrl, gradient: next })
       } catch {
         rememberArtGradient(coverUrl, null)
-        if (!dead) setGradient(null)
+        if (!dead) setLoaded({ url: coverUrl, gradient: null })
       }
     }
     img.onerror = () => {
       rememberArtGradient(coverUrl, null)
-      if (!dead) setGradient(null)
+      if (!dead) setLoaded({ url: coverUrl, gradient: null })
     }
     img.src = coverUrl
     return () => {
@@ -210,5 +204,11 @@ export function useArtGradient(coverUrl: string | undefined): ArtGradient | null
     }
   }, [coverUrl])
 
-  return gradient
+  if (!coverUrl) return null
+  const cached = artGradientCache.get(coverUrl)
+  if (cached !== undefined) return cached
+  // Still loading: keep the previous cover's palette on screen rather than
+  // dropping to the gray fallback for the length of the fetch. A cached
+  // failure resolves to null above, so a broken cover can't strand it.
+  return loaded?.gradient ?? null
 }

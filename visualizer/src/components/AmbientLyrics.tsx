@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -385,7 +386,7 @@ export default function AmbientLyrics({
     return lines.slice(0, NEXT_LINES + 1)
   }, [lines, currentIndex, ended])
 
-  const readVisibleHeights = () => {
+  const readVisibleHeights = useCallback(() => {
     const nextHeights = new Map<number, number>()
 
     for (const line of visibleLines) {
@@ -407,7 +408,7 @@ export default function AmbientLyrics({
     }
 
     return nextHeights
-  }
+  }, [visibleLines])
 
   const commitHeights = (
     nextHeights: Map<number, number>,
@@ -447,8 +448,12 @@ export default function AmbientLyrics({
    * Measure before paint whenever the visible slice changes.
    */
   useLayoutEffect(() => {
+    // Measuring before paint is the point — the heights feed the y positions of
+    // the lines being painted — and commitHeights bails out unless a height
+    // actually changed, so this cannot cascade.
+    // oxlint-disable-next-line react/set-state-in-effect -- DOM measurement
     commitHeights(readVisibleHeights())
-  }, [visibleLines])
+  }, [visibleLines, readVisibleHeights])
 
   /*
    * Continue observing each lyric so font loading, font-weight changes,
