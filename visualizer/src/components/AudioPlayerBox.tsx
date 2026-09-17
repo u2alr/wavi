@@ -1,7 +1,14 @@
 ﻿import { useEffect, useState, useRef, useCallback, memo, type CSSProperties } from 'react'
 import { useStore } from '../store'
 import { getAudioElement } from '../audio'
-import { pauseSpotify, resumeSpotify, seekSpotify } from '../spotifyPlayer'
+import {
+  pauseSpotify,
+  resumeSpotify,
+  seekSpotify,
+  setSpotifyRepeat,
+  setSpotifyShuffle,
+  spotifyRepeatState,
+} from '../spotifyPlayer'
 import { usePlaybackTracker } from '../usePlaybackTracker'
 import { useArtGradient } from '../useArtGradient'
 
@@ -117,7 +124,13 @@ export default function AudioPlayerBox({
   const spotifyPlaying = useStore((s) => s.spotifyPlaying)
   const setSpotifyPlaying = useStore((s) => s.setSpotifyPlaying)
   const spotifyCurrentTrack = useStore((s) => s.spotifyCurrentTrack)
+  const isSpotifyAuthed = useStore((s) => s.isSpotifyAuthed)
   const playbackPosition = useStore((s) => s.playbackPosition)
+  const repeatMode = useStore((s) => s.repeatMode)
+  const shuffle = useStore((s) => s.shuffle)
+  const cycleRepeatMode = useStore((s) => s.cycleRepeatMode)
+  const toggleShuffle = useStore((s) => s.toggleShuffle)
+  const setSpotifyError = useStore((s) => s.setSpotifyError)
 
   const [isLocalPlaying, setIsLocalPlaying] = useState(false)
   const [localProgress, setLocalProgress] = useState({ position: 0, duration: 0 })
@@ -207,6 +220,33 @@ export default function AudioPlayerBox({
       setVolume(lastNonZeroVolume.current || 1.0)
     }
   }, [volume, setVolume])
+
+  // Repeat cycles off → all → one. Spotify keeps its own copy of these modes
+  // and natural track ends obey that copy, not ours — so mirror them whenever
+  // the session is authenticated, not only while a track happens to be loaded
+  // (a mode set before playback used to be dropped on the floor). Local files
+  // use audio.loop plus the ended handler in App.
+  const onCycleRepeat = useCallback(() => {
+    const next = repeatMode === 'off' ? 'all' : repeatMode === 'all' ? 'one' : 'off'
+    cycleRepeatMode()
+    const audio = getAudioElement()
+    if (audio) audio.loop = next === 'one'
+    if (isSpotifyAuthed) {
+      setSpotifyRepeat(spotifyRepeatState(next)).catch((err) =>
+        setSpotifyError(err instanceof Error ? err.message : String(err)),
+      )
+    }
+  }, [repeatMode, cycleRepeatMode, isSpotifyAuthed, setSpotifyError])
+
+  const onToggleShuffle = useCallback(() => {
+    const next = !shuffle
+    toggleShuffle()
+    if (isSpotifyAuthed) {
+      setSpotifyShuffle(next).catch((err) =>
+        setSpotifyError(err instanceof Error ? err.message : String(err)),
+      )
+    }
+  }, [shuffle, toggleShuffle, isSpotifyAuthed, setSpotifyError])
 
   // Drag preview — moves only the bar fill, never the audio.
   const previewSeekRatio = useCallback((ratio: number) => {
@@ -321,6 +361,21 @@ export default function AudioPlayerBox({
 
       <div className="apb-controls">
         <div className="apb-transport">
+          <button
+            className={`xp-btn${shuffle ? ' active' : ''}`}
+            onClick={onToggleShuffle}
+            title={shuffle ? 'Shuffle on' : 'Shuffle off'}
+            aria-label="Toggle Shuffle"
+            aria-pressed={shuffle}
+          >
+            <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="16 3 21 3 21 8" />
+              <line x1="4" y1="20" x2="21" y2="3" />
+              <polyline points="21 16 21 21 16 21" />
+              <line x1="15" y1="15" x2="21" y2="21" />
+              <line x1="4" y1="4" x2="9" y2="9" />
+            </svg>
+          </button>
           <button className="xp-btn" onClick={onPrev} title="Previous Track" aria-label="Previous Track">
             <svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor">
               <polygon points="19 20 9 12 19 4 19 20" />
@@ -349,6 +404,25 @@ export default function AudioPlayerBox({
               <polygon points="5 4 15 12 5 20 5 4" />
               <rect x="16.5" y="4" width="2.5" height="16" />
             </svg>
+          </button>
+          <button
+            className={`xp-btn${repeatMode !== 'off' ? ' active' : ''}`}
+            onClick={onCycleRepeat}
+            title={repeatMode === 'off' ? 'Repeat off' : repeatMode === 'all' ? 'Repeat all' : 'Repeat one'}
+            aria-label="Cycle Repeat Mode"
+            aria-pressed={repeatMode !== 'off'}
+          >
+            <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="17 1 21 5 17 9" />
+              <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+              <polyline points="7 23 3 19 7 15" />
+              <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+            </svg>
+            {repeatMode === 'one' && (
+              <span className="apb-badge" aria-hidden="true">
+                1
+              </span>
+            )}
           </button>
         </div>
 

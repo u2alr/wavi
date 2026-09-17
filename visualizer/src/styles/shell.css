@@ -109,6 +109,41 @@
   text-overflow: ellipsis;
 }
 
+/* Drawer handle for narrow viewports (see responsive.css): below 860px the
+   panel overlays the canvas, so the toggle belongs in the always-visible
+   chrome rather than inside the panel. */
+.panel-toggle-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--wavi-hairline, rgba(0, 0, 0, 0.14));
+  border-radius: 9px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.panel-toggle-btn:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+@media (max-width: 860px) {
+  .panel-toggle-btn {
+    display: inline-flex;
+  }
+}
+
+@media (pointer: coarse) and (max-width: 860px) {
+  .panel-toggle-btn {
+    width: 40px;
+    height: 40px;
+  }
+}
+
 .title-bar-spacer {
   width: 60px;
   flex-shrink: 0;

@@ -102,6 +102,9 @@ interface Store {
   extensionStatus: '' | 'EXT LIVE' | 'EXT SILENT' | 'EXT READY' | 'EXT ERROR'
   /** Render FPS cap (0 = unlimited). Session-only. */
   fpsLimit: number
+  /** Local + Spotify transport modes. Session-only. */
+  repeatMode: 'off' | 'all' | 'one'
+  shuffle: boolean
 
   setCurrentPreset: (p: string) => void
   setParam: <K extends keyof PresetParams>(key: K, value: PresetParams[K]) => void
@@ -135,6 +138,10 @@ interface Store {
   setAmFlip: (b: boolean) => void
   setExtensionStatus: (s: '' | 'EXT LIVE' | 'EXT SILENT' | 'EXT READY' | 'EXT ERROR') => void
   setFpsLimit: (fps: number) => void
+  setRepeatMode: (m: 'off' | 'all' | 'one') => void
+  cycleRepeatMode: () => void
+  setShuffle: (b: boolean) => void
+  toggleShuffle: () => void
 }
 
 const DEFAULT_PARAMS: PresetParams = {
@@ -175,6 +182,70 @@ function persistPresets(presets: SavedPreset[]) {
   } catch { /* in-memory state stays authoritative */ }
 }
 
+/**
+ * Look-and-feel prefs worth surviving a reload. Transport modes (repeat /
+ * shuffle) are deliberately *not* here: they mirror onto the Spotify player for
+ * one session and are meant to start clean. The `v` field versions the blob so
+ * a future shape change can be detected and ignored instead of misread.
+ */
+interface UiPrefs {
+  v: 1
+  volume: number
+  fpsLimit: number
+  bratWhiteBg: boolean
+  bratKaraoke: boolean
+  amFlip: boolean
+  isPanelCollapsed: boolean
+}
+
+const UI_PREFS_KEY = 'viz-ui-prefs'
+
+const DEFAULT_UI_PREFS: UiPrefs = {
+  v: 1,
+  volume: 1.0,
+  fpsLimit: 0,
+  bratWhiteBg: false,
+  bratKaraoke: false,
+  amFlip: false,
+  isPanelCollapsed: false,
+}
+
+function loadUiPrefs(): UiPrefs {
+  try {
+    const raw = localStorage.getItem(UI_PREFS_KEY)
+    if (!raw) return DEFAULT_UI_PREFS
+    const parsed = JSON.parse(raw) as Partial<UiPrefs>
+    if (parsed?.v !== 1) return DEFAULT_UI_PREFS
+    return { ...DEFAULT_UI_PREFS, ...parsed, v: 1 }
+  } catch {
+    return DEFAULT_UI_PREFS
+  }
+}
+
+function persistUiPrefs(patch: Partial<Omit<UiPrefs, 'v'>>) {
+  try {
+    localStorage.setItem(UI_PREFS_KEY, JSON.stringify({ ...loadUiPrefs(), ...patch, v: 1 }))
+  } catch { /* in-memory state stays authoritative */ }
+}
+
+const initialPrefs = loadUiPrefs()
+
+/**
+ * Whether the panel state in storage is the user's choice rather than our
+ * default. Narrow viewports start with the panel closed (it covers the whole
+ * canvas there), and that decision must not override a stored preference.
+ */
+export function hasStoredPanelPref(): boolean {
+  try {
+    const raw = localStorage.getItem(UI_PREFS_KEY)
+    if (!raw) return false
+    const parsed = JSON.parse(raw) as Partial<UiPrefs>
+    return parsed?.v === 1 && typeof parsed.isPanelCollapsed === 'boolean'
+  } catch {
+    return false
+  }
+}
+
 export const useStore = create<Store>((set, get) => ({
   currentPreset: 'mellow2',
   presetParams: {},
@@ -193,16 +264,18 @@ export const useStore = create<Store>((set, get) => ({
   playbackDuration: 0,
   metrics: { fps: 0, bass: 0, mid: 0, treble: 0, overall: 0, sourceMode: 'idle' as const },
   isFullscreen: false,
-  isPanelCollapsed: false,
+  isPanelCollapsed: initialPrefs.isPanelCollapsed,
   isMiniPlayer: false,
   activeModal: null,
   savedPresets: loadSavedPresets(),
-  volume: 1.0,
-  bratWhiteBg: false,
-  bratKaraoke: false,
-  amFlip: false,
+  volume: initialPrefs.volume,
+  bratWhiteBg: initialPrefs.bratWhiteBg,
+  bratKaraoke: initialPrefs.bratKaraoke,
+  amFlip: initialPrefs.amFlip,
   extensionStatus: '' as '' | 'EXT LIVE' | 'EXT SILENT' | 'EXT READY' | 'EXT ERROR',
-  fpsLimit: 0,
+  fpsLimit: initialPrefs.fpsLimit,
+  repeatMode: 'off' as 'off' | 'all' | 'one',
+  shuffle: false,
 
   setCurrentPreset: (p) => set({ currentPreset: p }),
   setParam: (key, value) =>
@@ -221,8 +294,15 @@ export const useStore = create<Store>((set, get) => ({
   setPlaylist: (files) => set({ playlist: files }),
   setCurrentTrackIndex: (i) => set({ currentTrackIndex: i }),
   setIsFullscreen: (fs) => set({ isFullscreen: fs }),
-  togglePanelCollapsed: () => set((s) => ({ isPanelCollapsed: !s.isPanelCollapsed })),
-  setPanelCollapsed: (collapsed) => set({ isPanelCollapsed: collapsed }),
+  togglePanelCollapsed: () => {
+    const next = !get().isPanelCollapsed
+    persistUiPrefs({ isPanelCollapsed: next })
+    set({ isPanelCollapsed: next })
+  },
+  setPanelCollapsed: (collapsed) => {
+    persistUiPrefs({ isPanelCollapsed: collapsed })
+    set({ isPanelCollapsed: collapsed })
+  },
   setIsMiniPlayer: (mini) => set({ isMiniPlayer: mini }),
   setActiveModal: (modal) => set({ activeModal: modal }),
   setSpotifyAuthed: (b) => set({ isSpotifyAuthed: b }),
@@ -237,12 +317,32 @@ export const useStore = create<Store>((set, get) => ({
   setPlaybackProgress: (position, duration) => set({ playbackPosition: position, playbackDuration: duration }),
   setMetrics: (metrics) => set({ metrics }),
   setTrackName: (name) => set({ trackName: name }),
-  setVolume: (v) => set({ volume: v }),
-  setBratWhiteBg: (b) => set({ bratWhiteBg: b }),
-  setBratKaraoke: (b) => set({ bratKaraoke: b }),
-  setAmFlip: (b) => set({ amFlip: b }),
+  setVolume: (v) => {
+    persistUiPrefs({ volume: v })
+    set({ volume: v })
+  },
+  setBratWhiteBg: (b) => {
+    persistUiPrefs({ bratWhiteBg: b })
+    set({ bratWhiteBg: b })
+  },
+  setBratKaraoke: (b) => {
+    persistUiPrefs({ bratKaraoke: b })
+    set({ bratKaraoke: b })
+  },
+  setAmFlip: (b) => {
+    persistUiPrefs({ amFlip: b })
+    set({ amFlip: b })
+  },
   setExtensionStatus: (s) => set({ extensionStatus: s }),
-  setFpsLimit: (fps) => set({ fpsLimit: fps }),
+  setFpsLimit: (fps) => {
+    persistUiPrefs({ fpsLimit: fps })
+    set({ fpsLimit: fps })
+  },
+  setRepeatMode: (m) => set({ repeatMode: m }),
+  cycleRepeatMode: () =>
+    set((s) => ({ repeatMode: s.repeatMode === 'off' ? 'all' : s.repeatMode === 'all' ? 'one' : 'off' })),
+  setShuffle: (b) => set({ shuffle: b }),
+  toggleShuffle: () => set((s) => ({ shuffle: !s.shuffle })),
 
   savePreset: (name) => {
     const { currentPreset, savedPresets } = get()

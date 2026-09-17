@@ -1572,6 +1572,28 @@ input[type="range"]::-moz-range-thumb {
   filter: none;
 }
 
+/* Toggled transport modes (shuffle / repeat on): accent wash + ink glyph. */
+.audio-player-box .apb-transport .xp-btn.active {
+  position: relative;
+  background: var(--apb-ink, #f4f6f8);
+  border-color: transparent;
+  color: var(--apb-g3, #202126);
+  box-shadow: none;
+}
+
+.audio-player-box .apb-transport .xp-btn.active:hover {
+  filter: brightness(1.08);
+}
+
+.apb-badge {
+  position: absolute;
+  right: 1px;
+  bottom: 0;
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1;
+}
+
 /* Quiet volume cluster: chromeless row, monochrome slider. */
 .audio-player-box .apb-volume {
   background: transparent;

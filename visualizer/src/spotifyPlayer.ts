@@ -232,3 +232,34 @@ export async function setSpotifyVolume(volume: number): Promise<void> {
   }
 }
 
+/** Our session's repeat mode, in Spotify's naming. */
+export function spotifyRepeatState(mode: 'off' | 'all' | 'one'): 'off' | 'context' | 'track' {
+  return mode === 'all' ? 'context' : mode === 'one' ? 'track' : 'off'
+}
+
+/**
+ * Shuffle and repeat are player state, not app state: without a device_id they
+ * land on whichever device is currently active, and Spotify does not guarantee
+ * the order in which they run relative to other player endpoints. Always aim
+ * them at the device we just transferred playback to.
+ */
+function deviceParam(deviceId: string | null): string {
+  return deviceId ? `&device_id=${encodeURIComponent(deviceId)}` : ''
+}
+
+/** Mirror repeat onto Spotify itself so natural track ends obey it. */
+export function setSpotifyRepeat(
+  mode: 'off' | 'track' | 'context',
+  deviceId: string | null = getSpotifyDeviceId(),
+): Promise<void> {
+  return spotifyApi<void>(`/me/player/repeat?state=${mode}${deviceParam(deviceId)}`, { method: 'PUT' })
+}
+
+/** Mirror shuffle onto Spotify itself so natural ends follow the shuffled queue. */
+export function setSpotifyShuffle(
+  on: boolean,
+  deviceId: string | null = getSpotifyDeviceId(),
+): Promise<void> {
+  return spotifyApi<void>(`/me/player/shuffle?state=${on}${deviceParam(deviceId)}`, { method: 'PUT' })
+}
+

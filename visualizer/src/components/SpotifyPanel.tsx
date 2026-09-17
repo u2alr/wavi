@@ -14,6 +14,7 @@ import {
   transferPlaybackToDevice,
 } from '../spotifyPlayer'
 import PanelSelect from './PanelSelect'
+import { applySpotifyTransportModes } from '../spotifyQueue'
 export default function SpotifyPanel() {
   const isSpotifyAuthed = useStore((s) => s.isSpotifyAuthed)
   const playlists = useStore((s) => s.spotifyPlaylists)
@@ -108,6 +109,9 @@ export default function SpotifyPanel() {
 
       const deviceId = await ensureSpotifyPlayer()
       await transferPlaybackToDevice(deviceId)
+      // Repeat/shuffle live on the Spotify player, so re-apply them on the
+      // device we're about to play on.
+      applySpotifyTransportModes(deviceId)
       await playTracks(list.map((t) => t.uri), i, deviceId)
     } catch (err) {
       setPendingTrackId(null)
@@ -185,6 +189,9 @@ export default function SpotifyPanel() {
       setPendingTrackId(track.id)
       const deviceId = await ensureSpotifyPlayer()
       await transferPlaybackToDevice(deviceId)
+      // Repeat/shuffle live on the Spotify player, so re-apply them on the
+      // device we're about to play on.
+      applySpotifyTransportModes(deviceId)
       await playTracks([track.uri], 0, deviceId)
     } catch (err) {
       setPendingTrackId(null)

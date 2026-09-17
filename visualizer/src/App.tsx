@@ -1,10 +1,15 @@
-import { useRef, useEffect, useCallback, useState } from 'react'
-import Scene from './components/Scene'
+import { useRef, useEffect, useCallback, useState, lazy, Suspense } from 'react'
 import SceneErrorBoundary from './components/SceneErrorBoundary'
+
+// The WebGL scene carries three.js and every shader — it is the bulk of the
+// bundle. Load it after the shell paints so first paint isn't blocked on it.
+const Scene = lazy(() => import('./components/Scene'))
+// Debug-only overlay, behind ?analysis-debug — no reason to ship it to everyone.
+const AnalysisDebugOverlay = lazy(() => import('./components/AnalysisDebugOverlay'))
 import FullscreenPill from './components/FullscreenPill'
 import ControlPanel from './components/ControlPanel'
 import AboutModal from './components/AboutModal'
-import { useStore, resolvePresetId } from './store'
+import { useStore, resolvePresetId, hasStoredPanelPref } from './store'
 import { PRESET_TYPES, PRESET_LABELS } from './presets'
 import {
   clearExtensionAudioData,
@@ -27,23 +32,26 @@ import {
   setSpotifyVolume,
 } from './spotifyPlayer'
 import { queueNext, queuePrev } from './spotifyQueue'
+import { nextQueueStep } from './queueIndex'
 import { exchangeCodeForToken, getSpotifyUser, loadTokens } from './spotify'
 import BratLyrics from './components/BratLyrics'
 import AmbientLyrics from './components/AmbientLyrics'
 import StatusBar from './components/StatusBar'
 import ExtensionBadge from './components/ExtensionBadge'
 import SavedLooksSection from './components/SavedLooksMenu'
-import AnalysisDebugOverlay from './components/AnalysisDebugOverlay'
 import { setAnalysisDebug } from './analyser'
 
 // Canonical order also drives the A/D keyboard cycle.
+
+// Drag-and-drop can't rely on the MIME type alone — some browsers report "" for
+// audio files — so fall back to the extension.
+const AUDIO_FILE_RE = /\.(mp3|m4a|aac|wav|ogg|oga|opus|flac|webm)$/i
 
 export default function App() {
   const fileRef = useRef<HTMLInputElement>(null)
 
   // Granular Zustand subscriptions
   const playlist = useStore((s) => s.playlist)
-  const currentTrackIndex = useStore((s) => s.currentTrackIndex)
   const isFullscreen = useStore((s) => s.isFullscreen)
   const isMiniPlayer = useStore((s) => s.isMiniPlayer)
   const trackName = useStore((s) => s.trackName)
@@ -67,6 +75,7 @@ export default function App() {
   const setPlaybackProgress = useStore((s) => s.setPlaybackProgress)
   const setMetrics = useStore((s) => s.setMetrics)
   const setVolume = useStore((s) => s.setVolume)
+  const isPanelCollapsed = useStore((s) => s.isPanelCollapsed)
   const togglePanelCollapsed = useStore((s) => s.togglePanelCollapsed)
   const setPanelCollapsed = useStore((s) => s.setPanelCollapsed)
   const setActiveModal = useStore((s) => s.setActiveModal)
@@ -127,6 +136,19 @@ export default function App() {
     setAudioVolume(volume)
     setSpotifyVolume(volume)
   }, [volume])
+
+  // Under 860px the panel is a full-width overlay drawer, so opening it on load
+  // would hide the visualizer behind its own settings. Start closed there —
+  // only when the user hasn't already picked a panel state, since the pref is
+  // written from the first toggle onwards.
+  const panelDefaultAppliedRef = useRef(false)
+  useEffect(() => {
+    if (panelDefaultAppliedRef.current) return
+    panelDefaultAppliedRef.current = true
+    if (!hasStoredPanelPref() && window.matchMedia('(max-width: 860px)').matches) {
+      setPanelCollapsed(true)
+    }
+  }, [setPanelCollapsed])
 
   // Close dropdown menu when clicking anywhere else
   useEffect(() => {
@@ -258,6 +280,29 @@ export default function App() {
     return () => cancelAnimationFrame(frameId)
   }, [setMetrics])
 
+  // The local-file step lives behind a ref so the `ended` handler can be
+  // attached to every fresh Audio element while still calling the latest
+  // closure (the handler itself is created before playTrack exists).
+  const stepLocalRef = useRef<(dir: 1 | -1, isAuto?: boolean) => void>(() => {})
+
+  const handleLocalEnded = useCallback(() => {
+    const s = useStore.getState()
+    if (s.repeatMode === 'one' && s.currentTrackIndex >= 0) {
+      // Restart on the same element — coarser than seeking, but it keeps the
+      // analyser wired up. A fresh Audio here would leave AudioPlayerBox's
+      // progress listener attached to a discarded element, since its effect
+      // only re-runs when trackName changes.
+      const audio = getAudioElement()
+      if (audio) {
+        audio.loop = true
+        audio.currentTime = 0
+        audio.play().catch(console.error)
+        return
+      }
+    }
+    stepLocalRef.current(1, true)
+  }, [])
+
   const playTrack = useCallback(
     (index: number) => {
       if (index < 0 || index >= playlist.length) return
@@ -266,67 +311,113 @@ export default function App() {
       setCurrentTrackIndex(index)
       const file = playlist[index]
       const audio = initAudio(file)
+      audio.loop = useStore.getState().repeatMode === 'one'
       // Auto-advance local files when a song naturally ends so the player
       // bar and lyrics move to the next song instead of going stale.
-      audio.onended = () => {
-        const s = useStore.getState()
-        const nxt = s.currentTrackIndex + 1
-        if (nxt < s.playlist.length) {
-          const nextFile = s.playlist[nxt]
-          s.setCurrentTrackIndex(nxt)
-          const nextAudio = initAudio(nextFile)
-          nextAudio.onended = audio.onended
-          s.setTrackName(nextFile.name.replace(/\.[^/.]+$/, ''))
-        } else {
-          s.setTrackName('')
-          s.setCurrentTrackIndex(-1)
-        }
-      }
+      audio.onended = handleLocalEnded
       setTrackName(file.name.replace(/\.[^/.]+$/, ''))
     },
-    [playlist, setCurrentTrackIndex, setSpotifyPlaying, setSpotifyCurrentTrack, setTrackName]
+    [playlist, setCurrentTrackIndex, setSpotifyPlaying, setSpotifyCurrentTrack, setTrackName, handleLocalEnded]
+  )
+
+  // Shared by the file picker and drag-and-drop. Guarded because initAudio
+  // throws on an unusable file or an unavailable AudioContext, and the playlist
+  // is already committed by then — failing silently would leave the player
+  // holding a queue with nothing playing and nothing said about it.
+  const loadLocalFiles = useCallback(
+    (files: File[]) => {
+      if (files.length === 0) return
+      setSpotifyPlaying(false)
+      setSpotifyCurrentTrack(null)
+      try {
+        setPlaylist(files)
+        setCurrentTrackIndex(0)
+        const audio = initAudio(files[0])
+        audio.loop = useStore.getState().repeatMode === 'one'
+        audio.onended = handleLocalEnded
+        setTrackName(files[0].name.replace(/\.[^/.]+$/, ''))
+        showMenuToast(`Loaded ${files.length} ${files.length === 1 ? 'file' : 'files'}`)
+      } catch (err) {
+        console.error('Local audio failed to start:', err)
+        setPlaylist([])
+        setCurrentTrackIndex(-1)
+        setTrackName('')
+        showMenuToast("Couldn't play that file — try another audio file.", true)
+      }
+    },
+    [
+      setPlaylist,
+      setCurrentTrackIndex,
+      setSpotifyPlaying,
+      setSpotifyCurrentTrack,
+      setTrackName,
+      handleLocalEnded,
+      showMenuToast,
+    ],
   )
 
   const handleFiles = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      const files = Array.from(e.target.files || [])
-      if (files.length === 0) return
-      setSpotifyPlaying(false)
-      setSpotifyCurrentTrack(null)
-      setPlaylist(files)
-      setCurrentTrackIndex(0)
-      const audio = initAudio(files[0])
-      audio.onended = () => {
-        const s = useStore.getState()
-        const nxt = s.currentTrackIndex + 1
-        if (nxt < s.playlist.length) {
-          const nextFile = s.playlist[nxt]
-          s.setCurrentTrackIndex(nxt)
-          const nextAudio = initAudio(nextFile)
-          nextAudio.onended = audio.onended
-          s.setTrackName(nextFile.name.replace(/\.[^/.]+$/, ''))
-        } else {
-          s.setTrackName('')
-          s.setCurrentTrackIndex(-1)
-        }
-      }
-      setTrackName(files[0].name.replace(/\.[^/.]+$/, ''))
+      loadLocalFiles(Array.from(e.target.files || []))
       if (fileRef.current) fileRef.current.value = ''
     },
-    [setPlaylist, setCurrentTrackIndex, setSpotifyPlaying, setSpotifyCurrentTrack, setTrackName]
+    [loadLocalFiles],
   )
 
-  const prev = useCallback(() => {
-    if (playlist.length === 0) return
-    const nextIdx = (currentTrackIndex - 1 + playlist.length) % playlist.length
-    playTrack(nextIdx)
-  }, [currentTrackIndex, playlist.length, playTrack])
+  // Preventing the default on drag-over is what makes this element a valid drop
+  // target — without it the browser navigates to the dropped file and the app
+  // unloads mid-playback.
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (e.dataTransfer.types.includes('Files')) e.preventDefault()
+  }, [])
 
-  const next = useCallback(() => {
-    if (playlist.length === 0) return
-    const nextIdx = (currentTrackIndex + 1) % playlist.length
-    playTrack(nextIdx)
-  }, [currentTrackIndex, playlist.length, playTrack])
+  // Dropping audio anywhere in the window loads it, like File > Open.
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      if (!e.dataTransfer.types.includes('Files')) return
+      e.preventDefault()
+      const files = Array.from(e.dataTransfer.files).filter(
+        (f) => f.type.startsWith('audio/') || AUDIO_FILE_RE.test(f.name),
+      )
+      if (files.length === 0) {
+        showMenuToast('That drop had no audio files.', true)
+        return
+      }
+      loadLocalFiles(files)
+    },
+    [loadLocalFiles, showMenuToast],
+  )
+
+  // One step for every local-file transition — the transport buttons and the
+  // natural-end handler above — so shuffle and repeat apply to both. Previously
+  // only the buttons consulted them, so shuffle played the list in order.
+  const stepLocal = useCallback(
+    (dir: 1 | -1, isAuto = false) => {
+      const s = useStore.getState()
+      const step = nextQueueStep({
+        index: s.currentTrackIndex,
+        length: s.playlist.length,
+        dir,
+        shuffle: s.shuffle,
+        auto: isAuto,
+        repeat: s.repeatMode,
+      })
+      if (step.kind === 'stop') {
+        s.setTrackName('')
+        s.setCurrentTrackIndex(-1)
+        return
+      }
+      playTrack(step.index)
+    },
+    [playTrack],
+  )
+
+  useEffect(() => {
+    stepLocalRef.current = stepLocal
+  }, [stepLocal])
+
+  const prev = useCallback(() => stepLocal(-1), [stepLocal])
+  const next = useCallback(() => stepLocal(1), [stepLocal])
 
   const spotifyPrev = useCallback(() => {
     useStore.getState().setSpotifyError(null)
@@ -482,6 +573,8 @@ export default function App() {
     <div
       className={`xp-window ${isFullscreen ? 'fullscreen' : ''} ${isMiniPlayer ? 'mini-player' : ''
         }`}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
     >
       {/* WINDOW CHROME — one continuous translucent material */}
       {!isFullscreen && (
@@ -498,6 +591,41 @@ export default function App() {
               </span>
             </div>
             <div className="title-bar-spacer" aria-hidden="true" />
+            {/* Drawer handle for narrow viewports: there the panel covers the
+                canvas, so the toggle can't live inside the panel itself, and
+                the View menu is two taps away. Hidden on desktop. */}
+            <button
+              type="button"
+              className="panel-toggle-btn"
+              onClick={togglePanelCollapsed}
+              title={isPanelCollapsed ? 'Show controls' : 'Hide controls'}
+              aria-label={isPanelCollapsed ? 'Show controls' : 'Hide controls'}
+              aria-expanded={!isPanelCollapsed}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="16"
+                height="16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                aria-hidden="true"
+              >
+                {isPanelCollapsed ? (
+                  <>
+                    <line x1="3" y1="6" x2="21" y2="6" />
+                    <line x1="3" y1="12" x2="21" y2="12" />
+                    <line x1="3" y1="18" x2="21" y2="18" />
+                  </>
+                ) : (
+                  <>
+                    <line x1="5" y1="5" x2="19" y2="19" />
+                    <line x1="19" y1="5" x2="5" y2="19" />
+                  </>
+                )}
+              </svg>
+            </button>
           </div>
 
           {/* INTERACTIVE MENU BAR */}
@@ -762,7 +890,9 @@ export default function App() {
       <div className="main-content">
         <div className="canvas-wrap">
           <SceneErrorBoundary>
-            <Scene />
+            <Suspense fallback={<div className="canvas-loading" aria-hidden="true" />}>
+              <Scene />
+            </Suspense>
           </SceneErrorBoundary>
           <BratLyrics
             active={currentPreset === 'brat'}
@@ -812,7 +942,11 @@ export default function App() {
       <AboutModal />
 
       {/* Analysis engine debug overlay (?analysis-debug) */}
-      {showAnalysisDebug && <AnalysisDebugOverlay />}
+      {showAnalysisDebug && (
+        <Suspense fallback={null}>
+          <AnalysisDebugOverlay />
+        </Suspense>
+      )}
 
       {/* Window-level toasts for menu actions (save/share). */}
       <div className="xp-toast-region" role="status" aria-live="polite">
