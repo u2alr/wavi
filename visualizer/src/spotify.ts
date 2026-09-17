@@ -6,6 +6,11 @@ const REDIRECT_URI: string =
 
 const TOKEN_KEY = 'viz-spotify-tokens'
 const VERIFIER_KEY = 'viz-spotify-verifier'
+// CSRF marker: generated before we leave for Spotify and checked against the
+// `state` that comes back, so a forged or replayed callback URL can't complete
+// a sign-in. PKCE already makes a stolen code useless without the verifier;
+// this is the other half of the handshake.
+const STATE_KEY = 'viz-spotify-state'
 
 const SCOPES = [
   'user-read-email',
@@ -102,7 +107,9 @@ async function codeChallenge(verifier: string): Promise<string> {
 
 async function buildAuthUrl(): Promise<string> {
   const verifier = randomString(64)
+  const state = randomString(16)
   sessionStorage.setItem(VERIFIER_KEY, verifier)
+  sessionStorage.setItem(STATE_KEY, state)
   const challenge = await codeChallenge(verifier)
   const params = new URLSearchParams({
     client_id: assertConfigured(),
@@ -110,6 +117,7 @@ async function buildAuthUrl(): Promise<string> {
     redirect_uri: REDIRECT_URI,
     code_challenge_method: 'S256',
     code_challenge: challenge,
+    state,
     scope: SCOPES,
   })
   return `https://accounts.spotify.com/authorize?${params.toString()}`
@@ -162,7 +170,19 @@ async function postToken(body: URLSearchParams): Promise<SpotifyTokens> {
 }
 
 /** Exchange the authorization `code` from the redirect URL for tokens. */
-export async function exchangeCodeForToken(code: string): Promise<SpotifyTokens> {
+export async function exchangeCodeForToken(
+  code: string,
+  state: string | null,
+): Promise<SpotifyTokens> {
+  // No stored state means this browser never started a flow (fresh session,
+  // URL opened elsewhere) — the PKCE verifier check covers that case. A state
+  // that is present but different is someone else's callback.
+  const expected = sessionStorage.getItem(STATE_KEY)
+  if (expected && state !== expected) {
+    sessionStorage.removeItem(STATE_KEY)
+    sessionStorage.removeItem(VERIFIER_KEY)
+    throw new Error('Spotify sign-in could not be verified. Start the connection again.')
+  }
   const verifier = sessionStorage.getItem(VERIFIER_KEY) ?? ''
   const tokens = await postToken(
     new URLSearchParams({
@@ -175,6 +195,7 @@ export async function exchangeCodeForToken(code: string): Promise<SpotifyTokens>
   )
   saveTokens(tokens)
   sessionStorage.removeItem(VERIFIER_KEY)
+  sessionStorage.removeItem(STATE_KEY)
   // Fresh login may mean a different app (possibly with catalog access).
   catalogSearchBlocked = false
   return tokens

@@ -138,14 +138,15 @@ export default function App() {
   // Spotify OAuth
   const exchangedCodeRef = useRef<string | null>(null)
   useEffect(() => {
-    const code = new URLSearchParams(window.location.search).get('code')
+    const params = new URLSearchParams(window.location.search)
+    const code = params.get('code')
     if (code) {
       // StrictMode invokes effects twice in dev and the ?code= is only stripped
       // asynchronously below, so without this guard the same authorization code
       // is POSTed twice and the second attempt fails with invalid_grant.
       if (exchangedCodeRef.current === code) return
       exchangedCodeRef.current = code
-      exchangeCodeForToken(code)
+      exchangeCodeForToken(code, params.get('state'))
         .then(async () => {
           const user = await getSpotifyUser()
           setSpotifyAuthed(true)

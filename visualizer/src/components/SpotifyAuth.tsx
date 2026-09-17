@@ -1,5 +1,6 @@
 import { useStore } from '../store'
 import { clearTokens, startSpotifyAuth } from '../spotify'
+import { disconnectSpotifyPlayer } from '../spotifyPlayer'
 
 export default function SpotifyAuth() {
   const isSpotifyAuthed = useStore((s) => s.isSpotifyAuthed)
@@ -9,6 +10,15 @@ export default function SpotifyAuth() {
 
   const logout = () => {
     clearTokens()
+    // Tear the SDK player down as well: its module-level player/deviceId
+    // singletons would otherwise outlive the session, so the next sign-in in
+    // this tab reuses a connection that is still holding the old token.
+    disconnectSpotifyPlayer().catch(console.error)
+    const store = useStore.getState()
+    store.setSpotifyPlaying(false)
+    store.setSpotifyCurrentTrack(null)
+    store.setSpotifyTracks([])
+    store.setSpotifyError(null)
     setSpotifyAuthed(false)
     setSpotifyUser(null)
   }
