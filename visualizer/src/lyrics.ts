@@ -85,6 +85,15 @@ function extractTimedWords(raw: string, line: LyricLine): LyricWord[] | null {
   const tagged: { t: number; text: string }[] = []
   let m: RegExpExecArray | null
   WORD_TAG_RE.lastIndex = 0
+  // Files that tag only the later words still have to show their opening text:
+  // karaoke mode renders the line from this word list alone, so a dropped lead
+  // would silently truncate the lyric.
+  const first = WORD_TAG_RE.exec(raw)
+  if (first) {
+    const lead = raw.slice(0, first.index).trim()
+    if (lead) tagged.push({ t: line.start, text: lead })
+  }
+  WORD_TAG_RE.lastIndex = 0
   while ((m = WORD_TAG_RE.exec(raw))) {
     const rest = raw.slice(m.index + m[0].length)
     const next = rest.search(/<\d+:\d/)
