@@ -427,7 +427,10 @@ async function refreshTokens(refreshToken: string): Promise<SpotifyTokens> {
       client_id: assertConfigured(),
     }),
   )
-  tokens.refresh_token = refreshToken
+  // Spotify usually omits the refresh token on a refresh grant, so keep the one
+  // we sent — but when it does rotate, the new value is the only one that still
+  // works, and dropping it signs the user out at the next expiry.
+  tokens.refresh_token = tokens.refresh_token || refreshToken
   saveTokens(tokens)
   return tokens
 }

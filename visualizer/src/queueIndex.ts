@@ -43,6 +43,13 @@ export function nextQueueStep({
     return { kind: 'play', index: roll >= index ? roll + 1 : roll }
   }
 
+  if (auto && index >= 0 && repeat === 'one') {
+    // A natural end replays the same track. The local transport also sets
+    // audio.loop for this mode, but the rule lives here so every caller gets it
+    // rather than each one re-deriving it.
+    return { kind: 'play', index }
+  }
+
   if (auto && index >= 0 && index + dir >= length) {
     // Natural end of the last track: repeat-all wraps, anything else stops.
     return repeat === 'all' ? { kind: 'play', index: 0 } : { kind: 'stop' }

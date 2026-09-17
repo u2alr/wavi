@@ -43,6 +43,10 @@ const BoxSeekBar = memo(function BoxSeekBar({
   onCancelScrub: () => void
 }) {
   const [isDragging, setIsDragging] = useState(false)
+  // Detach of the in-flight drag's window listeners, so unmounting mid-scrub
+  // (track cleared while dragging) can't leave them behind.
+  const endDragRef = useRef<(() => void) | null>(null)
+  useEffect(() => () => endDragRef.current?.(), [])
 
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -77,21 +81,26 @@ const BoxSeekBar = memo(function BoxSeekBar({
         const rect = track.getBoundingClientRect()
         const ratioAt = (x: number) => Math.max(0, Math.min(1, (x - rect.left) / rect.width))
         onPreviewRatio(ratioAt(e.clientX))
-        const onMove = (ev: PointerEvent) => onPreviewRatio(ratioAt(ev.clientX))
-        const onUp = (ev: PointerEvent) => {
+        const stopListening = () => {
           window.removeEventListener('pointermove', onMove)
           window.removeEventListener('pointerup', onUp)
           window.removeEventListener('pointercancel', onCancel)
+        }
+        const finish = () => {
+          stopListening()
+          endDragRef.current = null
           setIsDragging(false)
+        }
+        const onMove = (ev: PointerEvent) => onPreviewRatio(ratioAt(ev.clientX))
+        const onUp = (ev: PointerEvent) => {
+          finish()
           onSeekRatio(ratioAt(ev.clientX))
         }
         const onCancel = () => {
-          window.removeEventListener('pointermove', onMove)
-          window.removeEventListener('pointerup', onUp)
-          window.removeEventListener('pointercancel', onCancel)
-          setIsDragging(false)
+          finish()
           onCancelScrub()
         }
+        endDragRef.current = stopListening
         window.addEventListener('pointermove', onMove)
         window.addEventListener('pointerup', onUp)
         window.addEventListener('pointercancel', onCancel)

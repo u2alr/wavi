@@ -40,12 +40,24 @@ and the Spotify panel reports that it isn't configured.
 | `npm run build` | `tsc -b` typecheck, then a production bundle into `dist/`. |
 | `npm run typecheck` | Typecheck only. |
 | `npm test` | Vitest unit tests (pure logic — no DOM, no network). |
-| `npm run lint` | oxlint. |
+| `npm run lint` | oxlint — fails on warnings too (`--deny-warnings`), see below. |
 | `npm run check:viewport` | Headless-Chrome layout probe across phone/tablet/desktop viewports. |
 | `npm run preview` | Serve the built bundle. |
 
 CI (`.github/workflows/ci.yml`) runs lint, typecheck and tests on every push and
 pull request, plus a separate `viewport` job for the layout probe below.
+
+### Lint policy
+
+`npm run lint` runs with `--deny-warnings`, so any new warning fails CI rather
+than accumulating. The react plugin's React Compiler advisories
+(`react/immutability`, `react/refs`) are switched off for the three per-frame
+engine components in `.oxlintrc.json` — `Scene`, `AmbientLyrics` and
+`BratLyrics` mutate ref-held uniforms and scratch buffers every frame, and read
+refs during render to drive layout and animation, by design. They stay on for
+every other file. Two deliberate `set-state-in-effect` uses (the before-paint
+height measurement in `AmbientLyrics`, the song-key blank in `BratLyrics`) carry
+an inline `oxlint-disable-next-line` with the reason at the site.
 
 ## Responsive checks (`check:viewport`)
 
@@ -116,7 +128,21 @@ Notes:
 `netlify.toml` builds `npm run build` and publishes `dist`, and proxies
 `/api/canvas` to a third-party service that supplies Canvas visuals. The dev
 server mirrors that rewrite in `vite.config.ts` — **keep the two in sync**: a
-route proxied only in dev works locally and breaks in production.
+route proxied only in dev works locally and breaks in production. The proxy rule
+is declared before the SPA catch-all for the same reason: `/*` matches every
+path, so a rule listed after it only ever works in dev.
+
+### Security
+
+Spotify access and refresh tokens live in `localStorage`
+(`viz-spotify-tokens`) — the price of an authorization-code + PKCE flow with no
+backend to hold them. Anything running on the page can read them, which is why
+`netlify.toml` sends a Content-Security-Policy. It is staged as
+`Content-Security-Policy-Report-Only` on purpose: the app reaches Spotify's SDK,
+its Web API and lrclib.net, and a policy one origin short breaks playback with
+no visible cause. Deploy, load the site once with lyrics and a Spotify connect,
+check the console for violations, then rename the header to
+`Content-Security-Policy`.
 
 ## Known limitations
 

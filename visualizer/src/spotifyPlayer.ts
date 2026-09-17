@@ -26,9 +26,68 @@ export interface SpotifyPlaybackState {
 
 let player: any = null
 let deviceId: string | null = null
-let readyResolvers: Array<() => void> = []
 let stateListener: ((s: SpotifyPlaybackState | null) => void) | null = null
 let pendingTrackId: string | null = null
+
+interface ReadyWaiter {
+  settle: (error?: Error) => void
+  timer: number
+}
+
+let readyWaiters: ReadyWaiter[] = []
+
+/** How long to wait for the SDK device before declaring the player dead. */
+const PLAYER_READY_TIMEOUT_MS = 10_000
+
+/**
+ * Settle every caller waiting on the device id. Failures *reject*: the SDK
+ * reports account/authentication problems through its own listeners, and
+ * swallowing them left callers awaiting a `ready` that was never coming — the
+ * transport showed the next track as playing while nothing was.
+ */
+function settleReady(error?: Error) {
+  for (const waiter of readyWaiters.splice(0)) waiter.settle(error)
+}
+
+/** Resolve with the device id, or reject. Never hangs on a broken player. */
+function waitForReady(): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    const waiter: ReadyWaiter = {
+      settle: (error) => {
+        window.clearTimeout(waiter.timer)
+        if (error) reject(error)
+        else resolve(deviceId!)
+      },
+      timer: 0,
+    }
+    waiter.timer = window.setTimeout(() => {
+      // Drop only this waiter — others may have been added since.
+      readyWaiters = readyWaiters.filter((w) => w !== waiter)
+      reject(new Error('Spotify player did not become ready — try reconnecting Spotify.'))
+    }, PLAYER_READY_TIMEOUT_MS)
+    readyWaiters.push(waiter)
+  })
+}
+
+/**
+ * A fatal SDK error tears the player down (so the next attempt rebuilds it
+ * instead of reusing a corpse) and rejects anyone waiting on the device id.
+ * Events from an instance we already discarded are ignored, or a straggler
+ * would null the replacement that took its place.
+ */
+function failPlayer(instance: any, label: string, message?: string) {
+  if (player !== instance) return
+  console.error(`Spotify ${label}:`, message)
+  player = null
+  deviceId = null
+  transferredDeviceId = null
+  settleReady(new Error(`Spotify ${label}${message ? `: ${message}` : ''}`))
+}
+
+/** Named so it can actually be removed again — see disconnectSpotifyPlayer. */
+function handlePlayerStateChanged(state: SpotifyPlaybackState | null) {
+  if (stateListener) stateListener(state as SpotifyPlaybackState)
+}
 
 export function setSpotifyStateListener(cb: (s: SpotifyPlaybackState | null) => void) {
   stateListener = cb
@@ -90,8 +149,7 @@ export async function ensureSpotifyPlayer(): Promise<string> {
 
   if (player) {
     if (deviceId) return deviceId
-    await new Promise<void>((resolve) => readyResolvers.push(resolve))
-    return deviceId!
+    return waitForReady()
   }
 
   const token = await getAccessToken()
@@ -107,29 +165,28 @@ export async function ensureSpotifyPlayer(): Promise<string> {
     volume: 1.0,
   })
 
-  player.addListener('initialization_error', ({ message }: any) =>
-    console.error('Spotify initialization error:', message))
-  player.addListener('authentication_error', ({ message }: any) =>
-    console.error('Spotify authentication error:', message))
-  player.addListener('account_error', ({ message }: any) =>
-    console.error('Spotify account error:', message))
+  // The listeners below outlive nothing: `player` can be replaced under them.
+  const instance = player
+  instance.addListener('initialization_error', ({ message }: any) =>
+    failPlayer(instance, 'initialization error', message))
+  instance.addListener('authentication_error', ({ message }: any) =>
+    failPlayer(instance, 'authentication error', message))
+  instance.addListener('account_error', ({ message }: any) =>
+    failPlayer(instance, 'account error', message))
 
-  player.addListener('ready', ({ device_id }: { device_id: string }) => {
+  instance.addListener('ready', ({ device_id }: { device_id: string }) => {
+    if (player !== instance) return
     deviceId = device_id
-    readyResolvers.splice(0).forEach((r) => r())
+    settleReady()
   })
-  player.addListener('not_ready', ({ device_id }: { device_id: string }) => {
+  instance.addListener('not_ready', ({ device_id }: { device_id: string }) => {
     console.warn('Spotify device went offline:', device_id)
   })
-  player.addListener('player_state_changed', (state: SpotifyPlaybackState | null) => {
-    if (stateListener) stateListener(state as SpotifyPlaybackState)
-  })
+  instance.addListener('player_state_changed', handlePlayerStateChanged)
 
-  await player.connect()
+  await instance.connect()
 
-  if (!deviceId) {
-    await new Promise<void>((resolve) => readyResolvers.push(resolve))
-  }
+  if (!deviceId) return waitForReady()
   return deviceId!
 }
 
@@ -144,12 +201,15 @@ async function ensurePlaybackDevice(): Promise<void> {
 
 export async function disconnectSpotifyPlayer() {
   if (player) {
-    player.removeListener?.('player_state_changed')
+    // The SDK matches on the callback, so the event name alone detaches
+    // nothing — pass the same function that was registered above.
+    player.removeListener?.('player_state_changed', handlePlayerStateChanged)
     await player.disconnect?.()
     player = null
     deviceId = null
     transferredDeviceId = null
     setPendingTrackId(null)
+    settleReady(new Error('Spotify player disconnected'))
   }
 }
 

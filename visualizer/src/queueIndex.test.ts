@@ -32,8 +32,23 @@ describe('nextQueueStep', () => {
   it('stops at the end of the list on a natural end unless repeat-all', () => {
     const last = { ...base, index: 2, auto: true }
     expect(nextQueueStep(last)).toEqual({ kind: 'stop' })
-    expect(nextQueueStep({ ...last, repeat: 'one' })).toEqual({ kind: 'stop' })
     expect(nextQueueStep({ ...last, repeat: 'all' })).toEqual({ kind: 'play', index: 0 })
+  })
+
+  it('replays the same track on a natural end when repeat is one', () => {
+    // Mid-list and at the end: repeat-one is about the track, not the list.
+    expect(nextQueueStep({ ...base, auto: true, repeat: 'one' })).toEqual({
+      kind: 'play',
+      index: 1,
+    })
+    expect(nextQueueStep({ ...base, index: 2, auto: true, repeat: 'one' })).toEqual({
+      kind: 'play',
+      index: 2,
+    })
+  })
+
+  it('ignores repeat-one on a manual skip', () => {
+    expect(nextQueueStep({ ...base, repeat: 'one' })).toEqual({ kind: 'play', index: 2 })
   })
 
   it('advances normally mid-list on a natural end', () => {

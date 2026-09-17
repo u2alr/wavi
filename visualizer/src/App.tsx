@@ -47,6 +47,16 @@ import { setAnalysisDebug } from './analyser'
 // audio files — so fall back to the extension.
 const AUDIO_FILE_RE = /\.(mp3|m4a|aac|wav|ogg|oga|opus|flac|webm)$/i
 
+// Focusable page controls. The global handler has to recognise them because
+// Space is how a keyboard user presses the control that has focus; a shortcut
+// that swallows it makes every button reachable by Tab unusable.
+const INTERACTIVE_SELECTOR =
+  'button, a[href], input, select, textarea, summary, [role="slider"], [role="button"], [role="link"], [role="tab"]'
+
+function isInteractiveTarget(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && !!target.closest(INTERACTIVE_SELECTOR)
+}
+
 export default function App() {
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -483,7 +493,7 @@ export default function App() {
       setPanelCollapsed(true)
       if (!fsToastShownRef.current) {
         fsToastShownRef.current = true
-        showMenuToast('Fullscreen — press Tab for controls')
+        showMenuToast('Fullscreen — press H for controls')
       }
     } else if (preFsPanelRef.current === false) {
       setPanelCollapsed(false)
@@ -517,6 +527,9 @@ export default function App() {
         const nextIndex = (currentIndex + 1) % PRESET_TYPES.length
         setCurrentPreset(PRESET_TYPES[nextIndex])
       } else if (key === ' ' || event.code === 'Space') {
+        // Space belongs to the focused control (a button, the seek slider) —
+        // only the page itself falls through to play/pause.
+        if (isInteractiveTarget(event.target)) return
         // Space to toggle play/pause
         event.preventDefault()
         const state = useStore.getState()
@@ -542,7 +555,9 @@ export default function App() {
         event.preventDefault()
         const currentVol = useStore.getState().volume
         setVolume(currentVol > 0 ? 0 : 1.0)
-      } else if (key === 'tab' || key === 'h') {
+      } else if (key === 'h') {
+        // Deliberately no Tab binding: it is the only key that moves focus
+        // between controls, so hijacking it makes the app keyboard-hostile.
         event.preventDefault()
         togglePanelCollapsed()
       } else if (key === 'y') {
@@ -683,7 +698,7 @@ export default function App() {
                       }}
                     >
                       <span>Toggle Controls Sidebar</span>
-                      <span className="shortcut-hint">Tab / H</span>
+                      <span className="shortcut-hint">H</span>
                     </div>
                     <div
                       className="dropdown-item"

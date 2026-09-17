@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseLRC, toTimedWords } from './lyrics'
+import { cleanTitle, parseLRC, toTimedWords } from './lyrics'
 
 describe('parseLRC', () => {
   it('parses timestamps and display text', () => {
@@ -45,6 +45,24 @@ describe('parseLRC', () => {
     const [line] = parseLRC('[00:10.00]Hello <00:10.60>world')
     expect(line.words?.map((w) => w.text)).toEqual(['Hello', 'world'])
     expect(line.words?.[0].start).toBeCloseTo(10)
+  })
+})
+
+describe('cleanTitle', () => {
+  it('strips the version and feature noise Spotify bolts onto titles', () => {
+    expect(cleanTitle('Song - Remastered 2011')).toBe('Song')
+    expect(cleanTitle('Song (feat. Someone)')).toBe('Song')
+    expect(cleanTitle('Song [Live]')).toBe('Song')
+    expect(cleanTitle('Song (Sped Up)')).toBe('Song')
+    expect(cleanTitle('Song - From the Motion Picture')).toBe('Song')
+  })
+
+  it('falls back to the raw title when cleaning removes everything', () => {
+    expect(cleanTitle('[Live]')).toBe('[Live]')
+  })
+
+  it('leaves a plain title untouched', () => {
+    expect(cleanTitle('Ordinary Love')).toBe('Ordinary Love')
   })
 })
 
