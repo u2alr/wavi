@@ -583,7 +583,9 @@ select.xp-select:focus-visible,
 }
 
 input[type="range"] {
-  height: 20px;
+  /* 24px, the minimum target height — see the coarse block at the end of this
+     file for the roomier touch box. The track and thumb centre themselves. */
+  height: 24px;
 }
 
 input[type="range"]::-webkit-slider-runnable-track {
@@ -1910,6 +1912,46 @@ input[type="range"]::-moz-range-thumb {
 
   .spotify-track-art {
     width: 32px;
+    height: 32px;
+  }
+
+  /* Touch sizes for the player transport have to live in this file: the 28px /
+     34px rules for the same selectors are declared above, and this file loads
+     last, so an identical selector in responsive.css never applies. */
+  .apb-transport .xp-btn {
+    width: 40px;
+    height: 40px;
+    min-height: 40px;
+  }
+
+  .apb-transport .xp-btn.primary {
+    width: 46px;
+    height: 46px;
+    min-height: 46px;
+  }
+
+  .apb-controls {
+    gap: 10px;
+  }
+
+  .audio-player-box .apb-mute-btn {
+    width: 32px;
+    height: 32px;
+  }
+
+  /* The extension pill collapses to a dot on narrow screens — 14px tall is
+     below the 24px minimum for a touch target (it is a real button). */
+  .menu-ext-badge {
+    min-height: 30px;
+    min-width: 30px;
+    justify-content: center;
+    padding: 3px 12px;
+  }
+
+  /* Range inputs are 20px tall, under the 24px target minimum. Only the hit
+     box grows: the 6px track stays centred in the input and the thumb's
+     negative margin is relative to the track. */
+  input[type="range"] {
     height: 32px;
   }
 }

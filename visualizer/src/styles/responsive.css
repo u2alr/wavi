@@ -30,23 +30,14 @@
   }
 }
 
-/* Touch ergonomics: larger hit areas on coarse pointers */
+/* Touch ergonomics: larger hit areas on coarse pointers.
+   Anything that also has a same-or-higher-specificity rule in theme.css must
+   be sized there instead — theme.css is imported last, so it wins, and rules
+   here would be dead. See the coarse block at the end of theme.css for the
+   player transport, the mute button and the extension pill. */
 @media (pointer: coarse) {
   .xp-btn {
     min-height: 40px;
-  }
-  .spotify-track {
-    min-height: 54px;
-  }
-  .apb-transport .xp-btn {
-    width: 40px;
-    height: 40px;
-    min-height: 40px;
-  }
-  .apb-transport .xp-btn.primary {
-    width: 46px;
-    height: 46px;
-    min-height: 46px;
   }
   .preset-chip .del {
     width: 30px;
