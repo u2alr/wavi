@@ -583,10 +583,11 @@ const SAND_BAND_PICKS = [1, 5, 9, 13, 17, 22, 29]
 
 function SandsOfTimePreset() {
   const viewport = useThree((state) => state.viewport)
-  // Calm timepiece: flow / crawl / t are INTEGRATED (never scaled off
-  // the wall clock) so changing `speed` can't jump the phase. All audio
-  // uniforms stay frozen — nothing reacts, composition drifts on clocks.
-  const st = useRef({ flow: 0, crawl: 0, t: 0, eb: [0, 0, 0, 0, 0, 0, 0] })
+  // Mostly a timepiece: flow / crawl / t are INTEGRATED (never scaled off
+  // the wall clock) so changing `speed` can't jump the phase. Only treble
+  // (sparkle), transients (hit flashes), loudness (glow) and vocals react
+  // to sound — plus per-line band gating (each contour its own Hz region).
+  const st = useRef({ flow: 0, crawl: 0, t: 0, eb: [0, 0, 0, 0, 0, 0, 0], treble: 0, hit: 0, loud: 0, vocal: 0, sparkT: 0, glow: 0, lastGlow: -9 })
 
   const material = useMemo(() => new THREE.ShaderMaterial({
     uniforms: {
@@ -594,6 +595,7 @@ function SandsOfTimePreset() {
       uMid: { value: 0 }, uHigh: { value: 0 }, uKick: { value: 0 }, uBeat: { value: 0 },
       uFlow: { value: 0 }, uCrawl: { value: 0 },
       uBands: { value: [0, 0, 0, 0, 0, 0, 0] },
+      uTreble: { value: 0 }, uHit: { value: 0 }, uLoud: { value: 0 }, uVocal: { value: 0 }, uSparkT: { value: 0 }, uPulse: { value: 0 },
       uSensitivity: { value: 1 }, uHueShift: { value: 200 }, uIntensity: { value: 1.5 },
       uComplexity: { value: 1 }, uAspect: { value: 1 },
     },
@@ -602,6 +604,7 @@ function SandsOfTimePreset() {
       varying vec2 vUv;
       uniform float uTime,uEnergy,uBass,uMid,uHigh,uKick,uBeat,uFlow,uCrawl,uSensitivity,uHueShift,uIntensity,uComplexity,uAspect;
       uniform float uBands[7];
+      uniform float uTreble,uHit,uLoud,uVocal,uSparkT,uPulse;
 
       vec3 hsv2rgb(vec3 c){
         vec4 K=vec4(1.0,2.0/3.0,1.0/3.0,3.0);
@@ -779,12 +782,19 @@ function SandsOfTimePreset() {
         vec3 goldCore = vec3(1.00, 0.83, 0.60);
         vec3 goldMid  = vec3(0.78, 0.55, 0.32);
         vec3 ridge = mix(goldMid, goldCore, shade);
+        float peak = smoothstep(0.65, 1.0, max(uPulse, uHit));
+        ridge = mix(ridge, vec3(1.0, 0.97, 0.92), peak*0.55);
 
         // warm near-black base
         vec3 col = vec3(0.020, 0.016, 0.012);
 
+        // soft radial bloom at the dominant vortex, follows loudness
+        vec2 gd = w - vec2(0.05, 0.25);
+        col += vec3(0.45, 0.30, 0.16) * exp(-dot(gd, gd)*2.5) * uPulse * 0.7;
+
         // no fog: flat response, no top fade / vignette / center glow.
-        float strength = 0.9 * breathe * bright;
+        // lines breathe up with the voice.
+        float strength = (0.45 + pow(uVocal, 1.5)*1.55) * breathe * bright;
 
         col += ridge * lg * strength;
 
@@ -798,6 +808,13 @@ function SandsOfTimePreset() {
         float cell = hash21(floor(w*230.0) + floor(field*14.0));
         col += vec3(1.0,0.90,0.70) * step(0.978, cell) * lg * 0.9;
         col += vec3(1.0,0.88,0.66) * pow(sandN, 9.0) * lg * 2.2;
+
+        // treble sparkle: short-lived bright flickers stuck to random lines,
+        // plus a highlight traveling along the field. Both wake up on hits.
+        float flSeed = hash21(floor(w*230.0) + floor(field*14.0) + floor(uSparkT*6.0));
+        col += vec3(1.0,0.96,0.88) * step(1.0 - uTreble*0.30, flSeed) * (0.25 + uHit) * lg * 1.6;
+        float trav = pow(0.5 + 0.5*sin(field*5.0 - uSparkT*14.0), 8.0);
+        col += vec3(1.0,0.93,0.78) * trav * (0.15 + uHit*0.85) * lg * 0.8;
 
         // light film tooth so blacks stay sandy, not milky
         float g = fract(sin(dot(vUv*vec2(1243.0,1179.0)+mod(uTime,10.0), vec2(12.9898,78.233)))*43758.5453);
@@ -821,6 +838,24 @@ function SandsOfTimePreset() {
     const u = material.uniforms
     const s = st.current
 
+    // followers: treble shimmer, transient-hit envelope, loudness glow,
+    // vocal lift. Everything else (bass/energy/kick/beat) stays frozen.
+    const fol = (cur: number, tgt: number, atk: number, rel: number) =>
+      cur + (tgt - cur) * (1 - Math.exp(-dt * (tgt > cur ? atk : rel)))
+
+    s.treble = fol(s.treble, Math.min(((a.presence + a.treble + a.air) / 3) * sensitivity, 1), 10, 4)
+    s.hit = fol(s.hit, Math.min(Math.max(a.transient, a.hatEnergy * 0.8, a.snareEnergy * 0.8) * sensitivity, 1), 16, 6)
+    s.loud = fol(s.loud, Math.min(Math.max(a.kickEnergy, (a.bass + a.subBass * 0.5) * 0.8) * sensitivity, 1), 8, 4)
+    s.vocal = fol(s.vocal, Math.min(a.vocalPresence * sensitivity, 1), 6, 4)
+
+    // one-shot glow pulse per kick onset: 1 glow = 1 beat. Sustained bass
+    // holds no glow — re-arm gate + min gap stop plateau retrigger.
+    if (a.kickEnergy > 0.5 && s.glow < 0.35 && s.t - s.lastGlow > 0.18) {
+      s.glow = 1
+      s.lastGlow = s.t
+    }
+    s.glow *= Math.exp(-dt * 4)
+
     // per-line Hz feed: engine bands are already normalized + enveloped.
     // JS follower (attack 6 / release 2.5, frame-rate independent) takes
     // the snap off: attacks soften, decays trail smoothly.
@@ -834,9 +869,11 @@ function SandsOfTimePreset() {
     }
 
     // integrated clocks: constant rate, phase never jumps.
+    // highlight travel speeds up on hits.
     s.flow  += dt * speed * 0.06
     s.crawl += dt * 0.035
     s.t     += dt * speed
+    s.sparkT += dt * (0.4 + s.hit * 4.0)
 
     u.uTime.value = s.t
     u.uEnergy.value = 0.55
@@ -847,6 +884,12 @@ function SandsOfTimePreset() {
     u.uBeat.value = 0
     u.uFlow.value = s.flow
     u.uCrawl.value = s.crawl
+    u.uTreble.value = s.treble
+    u.uHit.value = s.hit
+    u.uLoud.value = s.loud
+    u.uVocal.value = s.vocal
+    u.uPulse.value = s.glow
+    u.uSparkT.value = s.sparkT
     u.uIntensity.value = intensity
     u.uComplexity.value = complexity
     u.uAspect.value = viewport.width / viewport.height
