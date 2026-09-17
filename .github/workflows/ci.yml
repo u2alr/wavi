@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: visualizer
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: visualizer/package-lock.json
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+
+  viewport:
+    # Layout gate. The stylesheets are imported in a load-bearing order, so a
+    # same-specificity rule in theme.css silently cancels a touch rule in
+    # responsive.css with no build error — only a real engine can say which one
+    # won. ubuntu-latest already ships Chrome, so nothing needs installing.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: visualizer
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: visualizer/package-lock.json
+
+      - run: npm ci
+      - run: npm run build
+
+      # Probes the built bundle (not the dev server) so production CSS and
+      # chunking are what gets measured. Phone portrait + landscape, tablet and
+      # desktop, with both a touch and a mouse pointer.
+      - name: Probe viewports
+        run: >-
+          npm run check:viewport --
+          --server preview
+          --sizes 390x844,844x390,1024x768,1440x900
+          --pointer both

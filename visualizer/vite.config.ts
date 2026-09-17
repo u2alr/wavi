@@ -3,25 +3,22 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
+  build: {
+    // three.js + every shader sit in the lazily imported Scene chunk
+    // (~940 kB raw / ~250 kB gzip). The limit is raised so that intentional
+    // chunk stays quiet while a *new* oversized chunk still warns.
+    chunkSizeWarningLimit: 1000,
+  },
   server: {
     host: '127.0.0.1',
     port: 5173,
     proxy: {
+      // Mirrors the Netlify rewrite in netlify.toml — keep the two in sync:
+      // anything proxied only here works in dev and breaks in production.
       '/api/canvas': {
         target: 'https://spotify-canva.vercel.app',
         changeOrigin: true,
         secure: true,
-      },
-      // NetEase has no CORS headers — proxy via same origin in dev so the
-      // browser never touches music.163.com directly.
-      '/api/netease': {
-        target: 'https://music.163.com',
-        changeOrigin: true,
-        secure: true,
-        rewrite: (path) => path.replace(/^\/api\/netease/, '/api'),
-        headers: {
-          Referer: 'https://music.163.com/',
-        },
       },
     },
   },
