@@ -1,6 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
+import AppErrorBoundary from './components/AppErrorBoundary'
 import './styles/index.css'
 
 // ponytail: @react-three/fiber@9.7.0 news up THREE.Clock internally;
@@ -12,8 +13,17 @@ console.warn = (...args: unknown[]) => {
   warn(...args)
 }
 
+// Rejected promises (playback calls, lyric fetches, SDK handshakes) never reach
+// an error boundary. Log them behind one stable prefix so a failing call is
+// findable instead of vanishing as a bare console entry.
+window.addEventListener('unhandledrejection', (event) => {
+  console.error('Unhandled rejection:', event.reason)
+})
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <App />
+    <AppErrorBoundary>
+      <App />
+    </AppErrorBoundary>
   </React.StrictMode>
 )
