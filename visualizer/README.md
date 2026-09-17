@@ -41,7 +41,7 @@ and the Spotify panel reports that it isn't configured.
 | `npm run typecheck` | Typecheck only. |
 | `npm test` | Vitest unit tests (pure logic — no DOM, no network). |
 | `npm run lint` | oxlint — fails on warnings too (`--deny-warnings`), see below. |
-| `npm run check:viewport` | Headless-Chrome layout probe across phone/tablet/desktop viewports, plus a shader sweep of every preset. |
+| `npm run check:viewport` | Headless-Chrome layout probe across phone/tablet/desktop viewports, plus a shader sweep of every preset against committed reference frames. |
 | `npm run preview` | Serve the built bundle. |
 
 CI (`.github/workflows/ci.yml`) runs lint, typecheck and tests on every push and
@@ -72,6 +72,7 @@ npm run check:viewport                              # 6 default viewports, touch
 npm run check:viewport -- --sizes 320x568 --pointer mouse
 npm run check:viewport -- --url http://127.0.0.1:4173/   # probe vite preview
 npm run check:viewport -- --presets none            # layout checks only
+npm run check:viewport -- --presets mellow2 --software-gl   # render like CI
 ```
 
 It starts vite if nothing is serving (and reuses your running dev server if it
@@ -86,13 +87,18 @@ WAV fixtures so the player box actually exists, then reports per viewport:
 
 ### Preset sweep (`--presets`, on by default)
 
-Every id in `src/presets.ts` is also rendered once — at the first `--sizes` ×
-`--pointer` combination — and checked for a clean mount. This is the only
-automated check that catches a shader that stopped compiling: three.js reports a
-GLSL compile or link failure with `console.error` and then keeps drawing a black
-frame, so nothing throws, no error boundary fires, and the layout checks above
-still pass. The id list is read out of the app rather than duplicated here, so a
-new preset is swept without anyone remembering to extend the probe.
+Every id in `src/presets.ts` is also rendered once and checked for a clean mount.
+This is the only automated check that catches a shader that stopped compiling:
+three.js reports a GLSL compile or link failure with `console.error` and then
+keeps drawing a black frame, so nothing throws, no error boundary fires, and the
+layout checks above still pass. The id list is read out of the app rather than
+duplicated here, so a new preset is swept without anyone remembering to extend
+the probe.
+
+The sweep runs at a fixed 390x844 touch viewport, deliberately *not* the first
+`--sizes` entry: a captured frame can only be compared to a reference captured at
+the same size, so the capture size has to be a constant rather than a function of
+the flags.
 
 A preset fails when the console reports an error, when its canvas is missing,
 has no WebGL context, or lost it, when the `Scene` chunk's Suspense fallback
@@ -103,19 +109,58 @@ cannot pass by silently rendering the same preset thirteen times. Failed
 resource loads (the Google fonts, notably) are reported as info instead: they say
 what the network looked like, not whether the app is broken.
 
-What the sweep cannot tell you is whether a shader that *compiles* still looks
-right — that needs eyes, or reference images the repo does not have.
+### Reference frames (`scripts/probe-baselines/`)
+
+Every swept preset is also captured and compared against a committed reference
+frame, which is what catches a shader that compiles and mounts but no longer
+looks right: a black or blank frame, the wrong palette, a uniform that stopped
+being written. There is one JSON file per preset; each is 16 rows of 16 average
+cell colours, small and diffable on purpose.
+
+Two things make the comparison meaningful rather than flaky:
+
+- **The animation clock is frozen** (to `uTime` 12s) for the sweep only. Every
+  preset drives `uTime` from `state.clock.elapsedTime`, which three reads from
+  `performance.now()`, so an unfrozen frame differs slightly on every run and a
+  reference would mean nothing. The layout runs above stay on the real clock: an
+  entrance animation frozen mid-flight would move the very things they measure.
+- **It compares cell averages, not pixels.** CI has no GPU and renders through
+  SwiftShader; a developer's machine renders on real hardware. Per-pixel noise
+  lands differently between the two, the coarse structure lands the same way.
+
+A frame fails when more than 8% of cells are off by more than 12/255 in any
+channel — the allowance is there because a thin high-contrast feature (aurora
+silk's brightest ribbons) can land inside a cell on one renderer and on its
+boundary on another, which reads as one large delta and nothing else. The
+reference frames were captured on a Radeon; `--software-gl` reruns the sweep on
+SwiftShader and is how that independence is checked.
+
+**Four presets are not covered by this, and the run says so.** `amPreset`,
+`am2Preset`, `waveform` and `chromaticBurst` draw nothing at all without audio,
+and the sweep loads none (it renders in silence for the sake of a stable frame —
+a playing track would make every band-reactive preset different on each run).
+Their reference frames are black, which could only ever catch "it started
+drawing something", so the run reports them as *not compared* instead of a pass.
+They are still covered by the compile, mount and console checks above; what is
+missing is their look.
+
+What it also cannot tell you: a change confined to a small part of the frame, or
+anything about motion. For an intended change of how a preset looks, run
+`npm run check:viewport -- --presets <id> --update-baselines`, then commit the
+regenerated file. A preset with no reference frame at all fails the run, so
+adding one means recording it.
 
 Options: `--server dev|preview`, `--sizes WxH,WxH`, `--pointer touch|mouse|both`,
-`--presets all|none|id,id`, `--json`, `--strict` (fail on info too),
-`--no-audio`. Set `CHROME_PATH` (or `CHROME_BIN`) if Chrome isn't in the usual
-place; otherwise it resolves one from `PATH`.
+`--presets all|none|id,id`, `--update-baselines`, `--software-gl`, `--json`,
+`--strict` (fail on info too), `--no-audio`. Set `CHROME_PATH` (or `CHROME_BIN`)
+if Chrome isn't in the usual place; otherwise it resolves one from `PATH`.
 
 CI runs it in the `viewport` job — GitHub's ubuntu runners ship Chrome, so
 nothing extra is installed — against the **built** bundle (`--server preview`)
-at 390x844, 844x390, 1024x768 and 1440x900, with both pointer types, and sweeps
-every preset. Run it locally whenever you touch `src/styles/**`, a preset under
-`src/components/presets/`, or the narrow-viewport behaviour in `App.tsx`.
+at 390x844, 844x390, 1024x768 and 1440x900, with both pointer types, sweeps
+every preset and compares the frames it can. Run it locally whenever you touch
+`src/styles/**`, a preset under `src/components/presets/`, or the narrow-viewport
+behaviour in `App.tsx`.
 
 ## Architecture
 

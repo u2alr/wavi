@@ -14,8 +14,20 @@
  * console.error and carries on drawing a black frame, so nothing throws and no
  * error boundary fires. A preset fails on a console or GL error, a canvas with
  * no WebGL context, a Suspense fallback that never resolved, or a #p= deep link
- * that did not actually switch the preset. Compiling and mounting is of course
- * not the same as *looking* right — that still needs eyes.
+ * that did not actually switch the preset.
+ *
+ * Each swept preset is also captured as a 16x16 grid of average cell colour and
+ * compared against the committed reference frame in scripts/probe-baselines/.
+ * That catches what compiling and mounting does not: a black or blank frame, the
+ * wrong palette, a shader that stopped responding to its parameters. It is
+ * deliberately coarse — CI renders on SwiftShader and a developer's machine on a
+ * real GPU, and per-pixel noise differs between the two while the structure does
+ * not — so subtle regressions still need eyes on the actual thing.
+ *
+ * Loud exception: the sweep loads no audio, and four presets (amPreset, am2Preset,
+ * waveform, chromaticBurst) draw nothing at all without it. Their reference
+ * frames are black, which can only ever catch "it started drawing something", so
+ * the run reports them as not compared rather than reporting a pass.
  *
  * Why this exists: `@media` rules here are spread over nine stylesheets imported
  * in a load-bearing order, so a same-specificity rule in theme.css silently kills
@@ -31,12 +43,14 @@
  *                                                            # banner breaks the JSON
  *   npm run check:viewport -- --presets none      # layout checks only
  *   npm run check:viewport -- --presets acidWash,brat
+ *   npm run check:viewport -- --update-baselines  # after an intended look change
+ *   npm run check:viewport -- --software-gl       # render like CI does
  *
  * Exit code is 1 when a failure-level finding is present (0 with --json unless
  * --fail is passed), which is how CI gates on it.
  */
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -87,10 +101,16 @@ Usage: npm run check:viewport -- [options]
                        transport only exist with a track loaded, so this hides
                        the most useful measurements.
   --presets=<list>     all (default) | none | comma-separated preset ids.
-                       Renders each preset at the first --sizes/--pointer
-                       combination and fails on a shader, GL or console error.
-                       The ids are read from src/presets.ts, so a new preset is
-                       swept without editing this script.
+                       Renders each preset at a fixed 390x844 touch viewport and
+                       fails on a shader, GL or console error. The ids are read
+                       from src/presets.ts, so a new preset is swept without
+                       editing this script.
+  --update-baselines   Rewrite scripts/probe-baselines/ from this run instead of
+                       comparing against it. Use after an intended change to how
+                       a preset looks, then commit the files.
+  --software-gl        Force Chrome onto SwiftShader. That is what CI renders
+                       with, so this is how the reference frames are checked for
+                       renderer independence.
   --json               Machine-readable output.
   --strict             Also fail on info-level findings (clipped labels,
                        targets under ${COMFORT_TARGET}px).
@@ -117,6 +137,8 @@ const SIZES = (() => {
 const LOAD_AUDIO = !has('no-audio')
 const JSON_OUT = has('json')
 const STRICT = has('strict')
+const UPDATE_BASELINES = has('update-baselines')
+const SOFTWARE_GL = has('software-gl')
 
 /* ── presets ────────────────────────────────────────────────────────── */
 
@@ -159,9 +181,117 @@ const PRESETS = (() => {
     .map((id) => id.trim())
     .filter(Boolean)
 })()
-// One viewport for the whole sweep: three compiles the same shaders at every
-// size, and 13 ids x every size x every pointer would dominate the runtime.
-const SWEEP = { pointer: POINTERS[0], size: SIZES[0] }
+// One fixed viewport for the whole sweep, deliberately not the first --sizes
+// entry: a captured frame is only comparable to a reference captured at the same
+// size, so the capture size has to be a constant rather than a function of the
+// flags. Change it and the reference frames need regenerating.
+const SWEEP = { pointer: 'touch', size: ['390x844', 390, 844, 2] }
+
+/* ── reference frames ───────────────────────────────────────────────── */
+
+// Frames are compared as a GRID x GRID grid of average cell colour, not as
+// pixels: CI has no GPU and renders through SwiftShader, where per-pixel noise
+// lands differently than on real hardware, while the coarse structure of a frame
+// is very nearly identical.
+const GRID = 16
+// Per-channel, on a cell average. Well above renderer-to-renderer drift and far
+// below an actual visual change.
+const TOLERANCE = 12
+// ...and a few cells are allowed past it anyway. A thin high-contrast feature
+// (aurora silk's brightest ribbons) lands inside a cell on one renderer and on
+// the boundary on another, which reads as a large delta in that one cell while
+// leaving the rest of the frame untouched — sub-pixel phase, not a difference
+// anyone can see. Measured drift on the widest such case is 13 cells of 256, so
+// this is the smallest allowance with a margin over it. What it costs: a change
+// confined to a small part of the frame can hide in the allowance.
+const OUTLIER_FRACTION = 0.08
+const ALLOWED_CELLS = Math.round(GRID * GRID * OUTLIER_FRACTION)
+const BASELINE_DIR = 'scripts/probe-baselines'
+// Every preset drives its uTime from state.clock.elapsedTime, which three reads
+// from performance.now(). With that pinned (see the sweep below) each preset
+// sits at the same animation time in every run and on every machine. A few
+// seconds in, so the patterns have their settled shape rather than the
+// degenerate first frame.
+const CAPTURE_CLOCK_MS = 12000
+
+const baselinePath = (preset) => join(BASELINE_DIR, `${preset}.json`)
+/** Same path in the shape it is written in the repo, for messages. */
+const baselineLabel = (preset) => `${BASELINE_DIR}/${preset}.json`
+
+function readBaseline(preset) {
+  try {
+    return JSON.parse(readFileSync(baselinePath(preset), 'utf8'))
+  } catch {
+    return null
+  }
+}
+
+/** One grid row per line: the file is meant to be reviewable in a diff. */
+function writeBaseline(preset, rows, renderer) {
+  mkdirSync(BASELINE_DIR, { recursive: true })
+  const body = rows.map((row) => `    [${row.map((c) => `[${c.join(', ')}]`).join(', ')}]`).join(',\n')
+  const meta = [
+    ['preset', JSON.stringify(preset)],
+    ['size', JSON.stringify(SWEEP.size[0])],
+    ['grid', String(GRID)],
+    ['renderer', JSON.stringify(renderer ?? 'unknown')],
+  ]
+  const head = meta.map(([k, v]) => `  "${k}": ${v}`).join(',\n')
+  writeFileSync(baselinePath(preset), `{\n${head},\n  "rows": [\n${body}\n  ]\n}\n`)
+}
+
+/**
+ * True for a frame that is uniformly black, i.e. the preset drew nothing. Four
+ * presets are in that state in this sweep (see analyseFrame) because they need
+ * audio to draw at all, and the sweep loads none.
+ */
+const isBlank = (rows) => rows.every((row) => row.every((c) => c[0] <= 4 && c[1] <= 4 && c[2] <= 4))
+
+/** Cells past TOLERANCE between two frames, plus the worst one. */
+function compareFrames(want, got) {
+  let past = 0
+  let worst = null
+  for (let y = 0; y < want.length; y++) {
+    for (let x = 0; x < want[y].length; x++) {
+      const a = want[y][x]
+      const b = got?.[y]?.[x]
+      // A missing cell means the capture changed shape, a mismatch in itself.
+      const delta = b
+        ? Math.max(Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1]), Math.abs(a[2] - b[2]))
+        : 255
+      if (delta > TOLERANCE) past++
+      if (!worst || delta > worst.delta) worst = { delta, x, y, want: a, got: b ?? null }
+    }
+  }
+  return { past, worst }
+}
+
+/**
+ * Decodes a screenshot inside the page and reduces it to a GRID x GRID grid of
+ * average cell colour. Node has no image decoder here and this script carries no
+ * dependencies, so the drawImage does the downscaling and averaging for us.
+ */
+const DECODE_GRID = (base64) => `(async () => {
+  const img = new Image();
+  img.src = 'data:image/png;base64,${base64}';
+  await img.decode();
+  const c = document.createElement('canvas');
+  c.width = ${GRID};
+  c.height = ${GRID};
+  const ctx = c.getContext('2d');
+  ctx.drawImage(img, 0, 0, ${GRID}, ${GRID});
+  const px = ctx.getImageData(0, 0, ${GRID}, ${GRID}).data;
+  const rows = [];
+  for (let y = 0; y < ${GRID}; y++) {
+    const row = [];
+    for (let x = 0; x < ${GRID}; x++) {
+      const i = (y * ${GRID} + x) * 4;
+      row.push([px[i], px[i + 1], px[i + 2]]);
+    }
+    rows.push(row);
+  }
+  return rows;
+})()`
 
 /* ── chrome ─────────────────────────────────────────────────────────── */
 
@@ -489,6 +619,65 @@ function analysePreset(preset, state, errors, menu, presetIds) {
   return findings
 }
 
+/**
+ * The frame half of the sweep. Separate from analysePreset because it is the
+ * only part that reads a committed file, so it reports back whether the
+ * comparison actually happened.
+ */
+function analyseFrame(preset, first, second, baseline) {
+  const findings = []
+  const add = (level, message) => findings.push({ level, message })
+  // No capture means no canvas, which the mount checks above already reported.
+  if (!first) return { findings, compared: false }
+
+  // Two captures of a frozen frame have to agree, otherwise there is nothing
+  // stable to compare a reference against and a passing run would mean nothing.
+  const drift = compareFrames(first, second)
+  if (drift.past) {
+    add(
+      'info',
+      `the frame moved between two captures (${drift.past} cells past ${TOLERANCE}) — the frozen clock is not holding`,
+    )
+  }
+
+  if (!baseline) {
+    add('failure', `no reference frame at ${baselineLabel(preset)} — run with --update-baselines and commit it`)
+    return { findings, compared: false }
+  }
+  if (baseline.grid !== GRID || baseline.size !== SWEEP.size[0]) {
+    add(
+      'info',
+      `reference frame is ${baseline.grid}x${baseline.grid} at ${baseline.size}, this sweep captures ${GRID}x${GRID} at ${SWEEP.size[0]} — not comparing`,
+    )
+    return { findings, compared: false }
+  }
+
+  // amPreset, am2Preset, waveform and chromaticBurst draw nothing at all without
+  // audio — checked unfrozen too, so it is silence and not the frozen clock. A
+  // black reference frame can only ever report "it started drawing something",
+  // which is not a regression worth failing on. Say the gap out loud instead of
+  // pretending the frame was checked.
+  if (isBlank(baseline.rows)) {
+    add(
+      'info',
+      `reference frame is uniformly black — this preset draws nothing without audio, so its look is not covered by the frame comparison`,
+    )
+    return { findings, compared: false }
+  }
+
+  const { past, worst } = compareFrames(baseline.rows, first)
+  if (past > ALLOWED_CELLS) {
+    const what = isBlank(first)
+      ? `renders a black frame where ${baselineLabel(preset)} does not`
+      : `renders differently from ${baselineLabel(preset)}`
+    add(
+      'failure',
+      `${what}: ${past} of ${GRID * GRID} cells past tolerance ${TOLERANCE} (${ALLOWED_CELLS} allowed; worst ${worst.delta} at ${worst.x},${worst.y}: rgb(${worst.got}) rendered, rgb(${worst.want}) expected). If the new look is intended, run --update-baselines.`,
+    )
+  }
+  return { findings, compared: true }
+}
+
 /* ── run ────────────────────────────────────────────────────────────── */
 
 const startedServer = !(await responds(URL))
@@ -531,6 +720,9 @@ try {
       '--no-default-browser-check',
       '--disable-extensions',
       '--enable-unsafe-swiftshader', // WebGL without a GPU
+      // SwiftShader on purpose, to render the way CI does and prove the
+      // committed reference frames do not depend on this machine's GPU.
+      ...(SOFTWARE_GL ? ['--use-angle=swiftshader'] : []),
       '--autoplay-policy=no-user-gesture-required',
       // Chrome refuses to sandbox as root, which is how containers usually run.
       ...(process.getuid?.() === 0 ? ['--no-sandbox'] : []),
@@ -577,11 +769,15 @@ try {
       } else if (msg.method === 'Runtime.exceptionThrown') {
         pageErrors.push({ source: 'exception', text: exceptionText(msg.params.exceptionDetails) })
       } else if (msg.method === 'Log.entryAdded' && msg.params.entry.level === 'error') {
-        const { source, text } = msg.params.entry
+        const { source, text, url } = msg.params.entry
         // The Log domain mirrors console and uncaught errors as 'javascript',
         // duplicating what is captured above. Take only browser-level entries:
         // failed resource loads and CSP violations.
-        if (source !== 'javascript') pageErrors.push({ source: `log/${source}`, text })
+        // The url is worth appending: "400" without it says nothing about what
+        // was requested.
+        if (source !== 'javascript') {
+          pageErrors.push({ source: `log/${source}`, text: url ? `${text} — ${url}` : text })
+        }
       }
     }
   }
@@ -593,8 +789,12 @@ try {
     })
 
   /** Runtime.evaluate reports page-side throws in the result, not as an error. */
-  const evaluate = async (expression) => {
-    const result = await send('Runtime.evaluate', { expression, returnByValue: true })
+  const evaluate = async (expression, options = {}) => {
+    const result = await send('Runtime.evaluate', {
+      expression,
+      returnByValue: true,
+      ...options,
+    })
     if (result.exceptionDetails) {
       const detail =
         result.exceptionDetails.exception?.description ?? result.exceptionDetails.text
@@ -607,6 +807,51 @@ try {
   await send('DOM.enable')
   await send('Runtime.enable')
   await send('Log.enable')
+
+  /**
+   * Frozen animation clock, installed for the sweep only (see the sweep below).
+   * It is a mutable cell rather than a fixed value so a capture can happen at a
+   * chosen animation time: uTime 0 is a degenerate frame for several presets.
+   */
+  const FREEZE_CLOCK = `
+    (() => {
+      window.__probeClockMs = 0;
+      performance.now = () => window.__probeClockMs;
+    })();
+  `
+
+  /** The canvas rect in CSS px, for the screenshot clip. */
+  const canvasBox = async () => {
+    const box = await evaluate(`(() => {
+      const canvas = document.querySelector('.canvas-wrap canvas');
+      if (!canvas) return null;
+      const r = canvas.getBoundingClientRect();
+      return { x: r.x, y: r.y, width: r.width, height: r.height };
+    })()`)
+    return box && box.width >= GRID && box.height >= GRID ? box : null
+  }
+
+  /**
+   * The visible canvas as a GRID grid of average cell colour, at a fixed
+   * animation time. Deliberately the composited screenshot rather than a
+   * readPixels: R3F has no preserveDrawingBuffer, so the drawing buffer is gone
+   * by the time anything can read it, and the composited frame is what a person
+   * would actually see.
+   */
+  const captureFrame = async () => {
+    await evaluate(`window.__probeClockMs = ${CAPTURE_CLOCK_MS}`)
+    // Let the shader draw a frame at that time before reading it.
+    await sleep(400)
+    const box = await canvasBox()
+    if (!box) return null
+    const shot = await send('Page.captureScreenshot', {
+      format: 'png',
+      // A quarter scale keeps the payload small; the comparison is 16 cells
+      // across either way, so nothing that survives averaging is lost.
+      clip: { x: box.x, y: box.y, width: box.width, height: box.height, scale: 0.25 },
+    })
+    return evaluate(DECODE_GRID(shot.data), { awaitPromise: true })
+  }
 
   const results = []
   for (const pointer of POINTERS) {
@@ -703,6 +948,11 @@ try {
           ? { type: 'landscapePrimary', angle: 90 }
           : { type: 'portraitPrimary', angle: 0 },
     })
+    // The layout runs above stay on the real clock on purpose: an entrance
+    // animation frozen mid-flight would move the very things they measure.
+    const clockScript = await send('Page.addScriptToEvaluateOnNewDocument', {
+      source: FREEZE_CLOCK,
+    })
 
     for (const preset of PRESETS) {
       await send('Runtime.evaluate', {
@@ -734,7 +984,27 @@ try {
       await sleep(150)
       const menu = await evaluate(READ_CHECKED_PRESET)
       await evaluate(TOGGLE_PRESETS_MENU)
+
+      // Two captures: the second is not compared against anything, it is there
+      // to show the first is stable enough to be worth comparing.
+      const first = await captureFrame()
+      const second = await captureFrame()
       captureErrors = false
+
+      const findings = analysePreset(preset, state, pageErrors, menu, PRESET_IDS)
+      let compared = false
+      let written = false
+      if (UPDATE_BASELINES) {
+        if (first) {
+          writeBaseline(preset, first, state.renderer)
+          written = true
+          findings.push({ level: 'info', message: `wrote ${baselineLabel(preset)}` })
+        }
+      } else {
+        const frame = analyseFrame(preset, first, second, readBaseline(preset))
+        findings.push(...frame.findings)
+        compared = frame.compared
+      }
 
       presetRuns.push({
         preset,
@@ -743,9 +1013,17 @@ try {
         state,
         menu,
         errors: pageErrors,
-        findings: analysePreset(preset, state, pageErrors, menu, PRESET_IDS),
+        // The capture itself, so a --json report says what was actually seen
+        // rather than only whether it matched.
+        frame: first,
+        compared,
+        written,
+        findings,
       })
     }
+    await send('Page.removeScriptToEvaluateOnNewDocument', {
+      identifier: clockScript.identifier,
+    })
   }
 
   /* ── output ──────────────────────────────────────────────────────── */
@@ -799,6 +1077,13 @@ try {
         `\npreset sweep — ${presetRuns.length} preset(s) at ${presetRuns[0].size} / ${presetRuns[0].pointer}`,
       )
       if (renderer) console.log(`gl: ${renderer}`)
+      const written = presetRuns.filter((r) => r.written).length
+      const compared = presetRuns.filter((r) => r.compared).length
+      console.log(
+        written
+          ? `frames: ${written} reference frame(s) written to ${BASELINE_DIR}/`
+          : `frames: ${compared} of ${presetRuns.length} compared against ${BASELINE_DIR}/`,
+      )
       for (const run of presetRuns) {
         const failed = run.findings.filter((f) => f.level === 'failure')
         const noted = run.findings.filter((f) => f.level === 'info')
