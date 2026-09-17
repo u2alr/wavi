@@ -47,8 +47,11 @@ jobs:
 
       # Probes the built bundle (not the dev server) so production CSS and
       # chunking are what gets measured. Phone portrait + landscape, tablet and
-      # desktop, with both a touch and a mouse pointer.
-      - name: Probe viewports
+      # desktop, with both a touch and a mouse pointer. The same run also sweeps
+      # every preset id (--presets defaults to all), which is the only thing here
+      # that catches a shader that stopped compiling: three.js logs those to the
+      # console and keeps drawing a black frame instead of throwing.
+      - name: Probe viewports and presets
         run: >-
           npm run check:viewport --
           --server preview

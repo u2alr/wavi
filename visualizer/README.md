@@ -41,7 +41,7 @@ and the Spotify panel reports that it isn't configured.
 | `npm run typecheck` | Typecheck only. |
 | `npm test` | Vitest unit tests (pure logic — no DOM, no network). |
 | `npm run lint` | oxlint — fails on warnings too (`--deny-warnings`), see below. |
-| `npm run check:viewport` | Headless-Chrome layout probe across phone/tablet/desktop viewports. |
+| `npm run check:viewport` | Headless-Chrome layout probe across phone/tablet/desktop viewports, plus a shader sweep of every preset. |
 | `npm run preview` | Serve the built bundle. |
 
 CI (`.github/workflows/ci.yml`) runs lint, typecheck and tests on every push and
@@ -71,6 +71,7 @@ instead of 40px on a phone. `npm run check:viewport` exists to catch that:
 npm run check:viewport                              # 6 default viewports, touch
 npm run check:viewport -- --sizes 320x568 --pointer mouse
 npm run check:viewport -- --url http://127.0.0.1:4173/   # probe vite preview
+npm run check:viewport -- --presets none            # layout checks only
 ```
 
 It starts vite if nothing is serving (and reuses your running dev server if it
@@ -83,16 +84,38 @@ WAV fixtures so the player box actually exists, then reports per viewport:
   drawer handle below the 860px breakpoint. Exit code 1.
 - **info** — clipped labels and targets under the comfortable 44px.
 
+### Preset sweep (`--presets`, on by default)
+
+Every id in `src/presets.ts` is also rendered once — at the first `--sizes` ×
+`--pointer` combination — and checked for a clean mount. This is the only
+automated check that catches a shader that stopped compiling: three.js reports a
+GLSL compile or link failure with `console.error` and then keeps drawing a black
+frame, so nothing throws, no error boundary fires, and the layout checks above
+still pass. The id list is read out of the app rather than duplicated here, so a
+new preset is swept without anyone remembering to extend the probe.
+
+A preset fails when the console reports an error, when its canvas is missing,
+has no WebGL context, or lost it, when the `Scene` chunk's Suspense fallback
+never clears, when an error boundary rendered, or when the `#p=` deep link did
+not actually switch the preset — the Presets menu marks the current id with
+`.checked`, and the sweep compares that against the id it asked for, so a sweep
+cannot pass by silently rendering the same preset thirteen times. Failed
+resource loads (the Google fonts, notably) are reported as info instead: they say
+what the network looked like, not whether the app is broken.
+
+What the sweep cannot tell you is whether a shader that *compiles* still looks
+right — that needs eyes, or reference images the repo does not have.
+
 Options: `--server dev|preview`, `--sizes WxH,WxH`, `--pointer touch|mouse|both`,
-`--json`, `--strict` (fail on info too), `--no-audio`. Set `CHROME_PATH` (or
-`CHROME_BIN`) if Chrome isn't in the usual place; otherwise it resolves one from
-`PATH`.
+`--presets all|none|id,id`, `--json`, `--strict` (fail on info too),
+`--no-audio`. Set `CHROME_PATH` (or `CHROME_BIN`) if Chrome isn't in the usual
+place; otherwise it resolves one from `PATH`.
 
 CI runs it in the `viewport` job — GitHub's ubuntu runners ship Chrome, so
 nothing extra is installed — against the **built** bundle (`--server preview`)
-at 390x844, 844x390, 1024x768 and 1440x900, with both pointer types. Run it
-locally whenever you touch `src/styles/**` or the narrow-viewport behaviour in
-`App.tsx`.
+at 390x844, 844x390, 1024x768 and 1440x900, with both pointer types, and sweeps
+every preset. Run it locally whenever you touch `src/styles/**`, a preset under
+`src/components/presets/`, or the narrow-viewport behaviour in `App.tsx`.
 
 ## Architecture
 
