@@ -2,8 +2,13 @@ let audioContext: AudioContext | null = null
 let analyser: AnalyserNode | null = null
 let gainNode: GainNode | null = null
 let source: MediaElementAudioSourceNode | null = null
+// The volume the app last asked for. The graph is built lazily on the first file
+// load, so a value set before that has to be remembered rather than dropped:
+// createGain() comes up at 1.0, and playback would then come out at full volume
+// however low the slider reads. Re-applied in initAudio, below.
 let audioElement: HTMLAudioElement | null = null
 let audioObjectUrl: string | null = null
+let desiredVolume = 1
 const freqData = new Uint8Array(256)
 // Frame-stamp cache: only call getByteFrequencyData once per animation frame
 let lastFillTime = -1
@@ -31,6 +36,10 @@ export function initAudio(file: File): HTMLAudioElement {
     analyser.fftSize = 512
     analyser.smoothingTimeConstant = 0.8
     gainNode = audioContext.createGain()
+    // The gain node a fresh context creates is at 1.0, which is not necessarily
+    // where the slider is — the app applies its volume only when the value
+    // changes, and that happened while this node did not exist yet.
+    gainNode.gain.value = desiredVolume
   }
 
   if (audioElement) {
@@ -133,8 +142,9 @@ export function getAudioSourceMode(): 'live' | 'idle' {
 }
 
 export function setAudioVolume(volume: number) {
+  desiredVolume = Math.max(0, Math.min(1, volume))
   if (gainNode) {
-    gainNode.gain.value = Math.max(0, Math.min(1, volume))
+    gainNode.gain.value = desiredVolume
   }
 }
 export function getSampleRate(): number {

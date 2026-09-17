@@ -28,6 +28,12 @@ let player: any = null
 let deviceId: string | null = null
 let stateListener: ((s: SpotifyPlaybackState | null) => void) | null = null
 let pendingTrackId: string | null = null
+// The volume the app last asked for, remembered for the same reason as in
+// audio.ts: the SDK player is built lazily on the first play, so a value set
+// while it did not exist has to survive until it does. Without this, a refresh
+// left the player at its constructor default and everything played at full
+// volume while the slider read low — the app only pushes volume when it changes.
+let desiredVolume = 1
 
 interface ReadyWaiter {
   settle: (error?: Error) => void
@@ -161,8 +167,9 @@ export async function ensureSpotifyPlayer(): Promise<string> {
       const t = await getAccessToken()
       cb(t ?? '')
     },
-    // We will initialize with 1.0; wait for App to sync it immediately via setSpotifyVolume.
-    volume: 1.0,
+    // Whatever the slider is on now, not 1.0: App's sync effect runs at mount,
+    // long before this player exists, so it cannot be relied on to fix this up.
+    volume: desiredVolume,
   })
 
   // The listeners below outlive nothing: `player` can be replaced under them.
@@ -178,6 +185,11 @@ export async function ensureSpotifyPlayer(): Promise<string> {
     if (player !== instance) return
     deviceId = device_id
     settleReady()
+    // Re-assert it now the device is connected: `ready` is the first point where
+    // setVolume is meaningful, and it covers a volume set after construction but
+    // before the SDK finished connecting. Deliberately not awaited — nothing
+    // downstream should wait on the volume for the device to count as ready.
+    instance.setVolume(desiredVolume).catch(() => {})
   })
   instance.addListener('not_ready', ({ device_id }: { device_id: string }) => {
     console.warn('Spotify device went offline:', device_id)
@@ -287,8 +299,9 @@ export function seekSpotify(positionMs: number): Promise<void> {
 }
 
 export async function setSpotifyVolume(volume: number): Promise<void> {
+  desiredVolume = Math.max(0, Math.min(1, volume))
   if (player) {
-    await player.setVolume(Math.max(0, Math.min(1, volume)))
+    await player.setVolume(desiredVolume)
   }
 }
 
