@@ -51,13 +51,14 @@ pull request, plus a separate `viewport` job for the layout probe below.
 
 `npm run lint` runs with `--deny-warnings`, so any new warning fails CI rather
 than accumulating. The react plugin's React Compiler advisories
-(`react/immutability`, `react/refs`) are switched off for the three per-frame
-engine components in `.oxlintrc.json` — `Scene`, `AmbientLyrics` and
-`BratLyrics` mutate ref-held uniforms and scratch buffers every frame, and read
-refs during render to drive layout and animation, by design. They stay on for
-every other file. Two deliberate `set-state-in-effect` uses (the before-paint
-height measurement in `AmbientLyrics`, the song-key blank in `BratLyrics`) carry
-an inline `oxlint-disable-next-line` with the reason at the site.
+(`react/immutability`, `react/refs`) are switched off for the per-frame engine
+files in `.oxlintrc.json` — everything under `src/components/presets/` plus
+`AmbientLyrics` and `BratLyrics` mutate ref-held uniforms and scratch buffers
+every frame, and read refs during render to drive layout and animation, by
+design. They stay on for every other file. Two deliberate `set-state-in-effect`
+uses (the before-paint height measurement in `AmbientLyrics`, the song-key blank
+in `BratLyrics`) carry an inline `oxlint-disable-next-line` with the reason at
+the site.
 
 ## Responsive checks (`check:viewport`)
 
@@ -108,7 +109,9 @@ src/
   spotifyPlayer.ts    Web Playback SDK wrapper
   spotifyQueue.ts     app-side queue over the loaded track list
   lyrics.ts           LRC parsing, ranking, LRCLib provider, localStorage cache
-  components/         Scene (WebGL, lazy-loaded), player box, lyrics, panels
+  components/         Shell, player box, lyrics, panels
+  components/presets/ Scene's per-preset modules (one per shader) + shared
+                      helpers (band reading, wave trace, AM tuning)
   styles/             CSS split by layer; index.css fixes the load order
 extension/            MV3 tab-audio capture bridge (own README)
 ```

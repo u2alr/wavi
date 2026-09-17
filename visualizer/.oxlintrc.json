@@ -8,13 +8,14 @@
   "overrides": [
     {
       // React Compiler advisories (the compiler is not enabled for this app).
-      // These three are per-frame render engines by design: they mutate
-      // ref-held uniform/scratch objects (Scene) and keep a mutable clock plus
-      // refs read during render to drive layout/animation (the lyric views).
-      // Rewriting them to be compiler-pure would change how they work, not fix
-      // a bug, so the two purity rules are off for these files only.
+      // These are per-frame render engines by design: every preset mutates
+      // ref-held uniform/scratch objects inside useFrame, and the lyric views
+      // keep a mutable clock plus refs read during render to drive
+      // layout/animation. Rewriting them to be compiler-pure would change how
+      // they work, not fix a bug, so the two purity rules are off for these
+      // files only.
       "files": [
-        "src/components/Scene.tsx",
+        "src/components/presets/**",
         "src/components/AmbientLyrics.tsx",
         "src/components/BratLyrics.tsx"
       ],
