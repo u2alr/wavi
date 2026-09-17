@@ -1,0 +1,24 @@
+# Cloudflare Pages response headers. This replaces the [[headers]] block that
+# used to sit in netlify.toml, which Pages never reads — the policies below were
+# being sent by Netlify and not by the host actually serving the site.
+#
+# This file only works from Vite's public/ directory, because that is what gets
+# copied verbatim into dist/, which is where Pages looks for it. A rule that
+# lives anywhere else is not read and not applied.
+#
+# Pages already sends X-Content-Type-Options and Referrer-Policy by default, and
+# a rule here overrides what Cloudflare would otherwise send. They are repeated
+# so the policy is this one file rather than "these rules plus whatever the
+# platform adds today".
+#
+# Keep the CSP narrow: it is what stops injected script from reading the Spotify
+# tokens in localStorage. If playback, lyrics or cover art breaks with a console
+# message starting "Refused to", the origin named there belongs in the directive
+# named there.
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), geolocation=(), microphone=()
+  Strict-Transport-Security: max-age=31536000
+  Content-Security-Policy: default-src 'self'; base-uri 'none'; object-src 'none'; script-src 'self' https://sdk.scdn.co; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://*.scdn.co https://*.spotifycdn.com; media-src 'self' blob: https://*.scdn.co; connect-src 'self' https://api.spotify.com https://accounts.spotify.com https://lrclib.net; frame-src 'self' https://sdk.scdn.co

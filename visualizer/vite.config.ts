@@ -13,8 +13,8 @@ export default defineConfig({
     host: '127.0.0.1',
     port: 5173,
     proxy: {
-      // Mirrors the Netlify rewrite in netlify.toml — keep the two in sync:
-      // anything proxied only here works in dev and breaks in production.
+      // Mirrors the Pages Function in functions/api/canvas.js — keep the two in
+      // sync: anything proxied only here works in dev and breaks in production.
       '/api/canvas': {
         target: 'https://spotify-canva.vercel.app',
         changeOrigin: true,

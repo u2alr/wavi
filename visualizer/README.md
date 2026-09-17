@@ -6,7 +6,7 @@ audio files straight from the file picker or a drag-and-drop.
 
 ## Requirements
 
-- Node 22+ and npm (CI runs on Node 22; Netlify pins its own `NODE_VERSION`).
+- Node 22+ and npm (CI runs on Node 22; `.nvmrc` pins 22 for the Pages build).
 - A Spotify **Premium** account for in-app playback. Non-Premium still works for
   lyrics following — the Spotify app plays, and the visualizer listens.
 - Optional: the bundled Chrome/Edge extension for capturing tab audio output
@@ -36,7 +36,7 @@ and the Spotify panel reports that it isn't configured.
 
 | Command | What it does |
 | --- | --- |
-| `npm run dev` | Vite dev server (proxies `/api/canvas`, see Deployment). |
+| `npm run dev` | Vite dev server (proxies `/api/canvas`; production serves it from a Pages Function — see Deployment). |
 | `npm run build` | `tsc -b` typecheck, then a production bundle into `dist/`. |
 | `npm run typecheck` | Typecheck only. |
 | `npm test` | Vitest unit tests (pure logic — no DOM, no network). |
@@ -199,6 +199,8 @@ src/
                       helpers (band reading, wave trace, AM tuning)
   styles/             CSS split by layer; index.css fixes the load order
 extension/            MV3 tab-audio capture bridge (own README)
+public/               copied verbatim into dist/: _headers, _routes.json, favicon
+functions/api/        Pages Function serving /api/canvas (see Deployment)
 ```
 
 Notes:
@@ -213,24 +215,88 @@ Notes:
 
 ## Deployment
 
-`netlify.toml` builds `npm run build` and publishes `dist`, and proxies
-`/api/canvas` to a third-party service that supplies Canvas visuals. The dev
-server mirrors that rewrite in `vite.config.ts` — **keep the two in sync**: a
-route proxied only in dev works locally and breaks in production. The proxy rule
-is declared before the SPA catch-all for the same reason: `/*` matches every
-path, so a rule listed after it only ever works in dev.
+Cloudflare Pages, with the project's **root directory set to `visualizer/`**
+(build command `npm run build`, output directory `dist`). The deployment has no
+`netlify.toml` and no `_redirects`: the parts of the old Netlify config had to
+move into files that are only read from specific places, and a rule in the wrong
+place is silently not applied at all:
+
+| File | Read from | Why |
+| --- | --- | --- |
+| `public/_headers` | copied into `dist/` | Response headers, including the CSP. Pages never reads `netlify.toml`, so the header block that used to live there was not being sent by the host actually serving the site. |
+| `public/_routes.json` | copied into `dist/` | Restricts Pages Functions to `/api/canvas`. Once a project has a `functions/` directory, **all** requests invoke a Function by default; this keeps static requests static (and free). |
+| `functions/api/canvas.js` | project root, *not* the output dir | The Pages Function below. Resolved from the project's root directory, which is why that setting has to be `visualizer/` — if it were the repo root, this would have to move to the top level. |
+
+`.nvmrc` pins Node 22 for the build. `package.json` `engines` is deliberately not
+used for this: Pages' v3 build image ignores it (its Node default is already
+22.16.0, so this is a pin rather than a fix).
+
+### `/api/canvas`
+
+A third-party service supplies the Canvas visuals. It sends no
+`Access-Control-Allow-Origin` — verified by sending an `Origin` header — so the
+browser cannot call it directly and the request has to leave from our own origin.
+`functions/api/canvas.js` does that fetch server-side, so the client keeps
+fetching `/api/canvas?trackId=…` unchanged, and the dev server proxies the same
+path in `vite.config.ts` — **keep the two in sync**: a route proxied only in dev
+works locally and breaks in production.
+
+This is the one part of the old `netlify.toml` that had no Cloudflare
+equivalent. Netlify did it with a `status = 200` rewrite, and `_redirects`
+cannot reproduce it: proxying there "will only support relative URLs on your
+site. You cannot proxy external domains."
+
+The SPA catch-all is the other rule that was not ported, because Pages already
+does it: with no top-level `404.html` in the output, unmatched paths render `/`.
+That is what keeps the OAuth redirect working when
+`VITE_SPOTIFY_REDIRECT_URI` points at a path like `/callback` — which is a
+request for a file that does not exist. Two consequences worth knowing: adding a
+`404.html` would silently break that redirect, and a `/* /index.html 200` proxy
+rule would be a worse substitute, since `_redirects` rules are followed
+regardless of whether a real asset matches — including the hashed assets in
+`dist/assets/`.
 
 ### Security
 
 Spotify access and refresh tokens live in `localStorage`
 (`viz-spotify-tokens`) — the price of an authorization-code + PKCE flow with no
 backend to hold them. Anything running on the page can read them, which is why
-`netlify.toml` sends a Content-Security-Policy. It is staged as
-`Content-Security-Policy-Report-Only` on purpose: the app reaches Spotify's SDK,
-its Web API and lrclib.net, and a policy one origin short breaks playback with
-no visible cause. Deploy, load the site once with lyrics and a Spotify connect,
-check the console for violations, then rename the header to
-`Content-Security-Policy`.
+`public/_headers` sends an enforcing `Content-Security-Policy`. It shipped as
+`-Report-Only` first, because the app reaches Spotify's SDK, its Web API and
+lrclib.net, and a policy one origin short breaks playback with no visible cause.
+
+If playback, lyrics or cover art stops working, look for a console message
+starting `Refused to` and add the origin it names to the directive it names —
+that message is the whole diagnosis. Note which parts a local run cannot reach:
+neither `connect-src` to the Web API nor `img-src` for covers is exercised
+without a real Spotify login, and the playback SDK's *own* traffic is inside its
+`sdk.scdn.co` iframe, governed by Spotify's policy rather than this one — which is
+why the SDK needs `frame-src`, not a wider `connect-src`.
+
+Two directives are wildcarded over a CDN rather than naming hosts, because both
+cover URLs the API hands out and that set changes:
+
+- `img-src` over `*.scdn.co` and `*.spotifycdn.com`. Covers are whatever the Web
+  API put in `album.images[].url` — editorial playlist mosaics, `*-images.scdn.co`,
+  `image-cdn-*.spotifycdn.com`. A missing host is a silently blank cover on the
+  ambient presets, not an error, which is how the earlier two-host list would
+  have failed in production.
+- `media-src` over `*.scdn.co`. Canvas videos are served from `canvaz.scdn.co`
+  (measured: `/api/canvas` returns a `.cnvs.mp4` URL there), and `media-src` is
+  the directive that governs a `<video>` element. It was `'self' blob:`, which
+  blocks exactly that. The host itself is fine for the WebGL texture — it sends
+  `Access-Control-Allow-Origin: *` and the preset sets `crossOrigin` — so the
+  policy was the only thing in the way.
+
+Nothing in CI reads `_headers`, and vite neither serves nor validates these
+headers (`--server preview` sends none of them), so a policy regression is
+invisible until production. The policy was checked by hand against the built
+bundle, served with the header values parsed out of the config and loaded in
+Chrome for 8 viewport runs and all 13 presets: zero violations, with the detector
+proven first by dropping a font origin and watching the violation appear. The
+`media-src` rule above is **not** covered by that check — canvas playback needs a
+real Spotify login — which is why it rests on the two measurements recorded here
+instead.
 
 ## Known limitations
 
