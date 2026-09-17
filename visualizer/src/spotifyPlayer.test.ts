@@ -30,27 +30,91 @@ class FakePlayer {
 }
 
 let instances: FakePlayer[] = []
+const apiCalls = vi.hoisted(() => [] as { url: string; body?: string }[])
 
 vi.mock('./spotify', () => ({
   getAccessToken: async () => 'token',
-  spotifyApi: async () => ({}),
+  spotifyApi: async (url: string, init?: { body?: string }) => {
+    apiCalls.push({ url, body: init?.body })
+    return {}
+  },
 }))
 
 async function loadPlayer() {
   vi.resetModules()
   instances = []
+  apiCalls.length = 0
   return import('./spotifyPlayer')
 }
 
 beforeEach(() => {
   vi.stubGlobal('window', {
     Spotify: { Player: FakePlayer },
-    setTimeout: globalThis.setTimeout,
-    clearTimeout: globalThis.clearTimeout,
+    // Delegated rather than copied, so a case that swaps in fake timers after
+    // this stub was installed still reaches them.
+    setTimeout: (fn: () => void, ms?: number) => globalThis.setTimeout(fn, ms),
+    clearTimeout: (id: ReturnType<typeof setTimeout>) => globalThis.clearTimeout(id),
   })
 })
 
 afterEach(() => vi.unstubAllGlobals())
+
+describe('rapid track selections', () => {
+  const uris = ['spotify:track:a', 'spotify:track:b', 'spotify:track:c']
+
+  it('sends one request, for the selection made last', async () => {
+    vi.useFakeTimers()
+    try {
+      const sdk = await loadPlayer()
+
+      const first = sdk.playTracks(uris, 0, 'device-1')
+      const last = sdk.playTracks(uris, 2, 'device-1')
+      await vi.advanceTimersByTimeAsync(400)
+      await Promise.all([first, last])
+
+      // One request, carrying the newest offset. Clicking 2,3,4,5 used to send
+      // four PUTs whose order Spotify does not guarantee, so playback could be
+      // left on 2 — the track clicked first — while the UI showed 5.
+      expect(apiCalls).toHaveLength(1)
+      expect(JSON.parse(apiCalls[0].body!).offset.position).toBe(2)
+      expect(apiCalls[0].url).toContain('device_id=device-1')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('still sends a lone selection', async () => {
+    vi.useFakeTimers()
+    try {
+      const sdk = await loadPlayer()
+
+      const settled = sdk.playTracks(uris, 1, 'device-1')
+      await vi.advanceTimersByTimeAsync(400)
+      await settled
+
+      expect(apiCalls).toHaveLength(1)
+      expect(JSON.parse(apiCalls[0].body!).offset.position).toBe(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('marks the newest track pending before the request goes out', async () => {
+    vi.useFakeTimers()
+    try {
+      const sdk = await loadPlayer()
+
+      void sdk.playTracks(uris, 0, 'device-1')
+      void sdk.playTracks(uris, 2, 'device-1')
+
+      // The stale-event guard has to cover the settle window, not just the
+      // flight, or an event for the track being left behind lands in between.
+      expect(sdk.getPendingTrackId()).toBe('c')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
 
 describe('volume set before the player exists', () => {
   it('is the volume the player is created with', async () => {

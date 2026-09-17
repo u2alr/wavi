@@ -250,19 +250,71 @@ export async function playContext(contextUri: string, deviceId = getSpotifyDevic
   })
 }
 
-/** Play a specific list of track URIs starting at `offset`. */
-export async function playTracks(uris: string[], offset = 0, deviceId = getSpotifyDeviceId()): Promise<void> {
+/**
+ * How long a selection waits before it is sent, so a burst of clicks becomes one
+ * request instead of one per click.
+ */
+const PLAY_SETTLE_MS = 180
+
+interface PlayIntent {
+  uris: string[]
+  offset: number
+  deviceId: string | null
+}
+
+let pendingPlay: PlayIntent | null = null
+let pendingPlayTimer: number | null = null
+let playWaiters: { resolve: () => void; reject: (err: unknown) => void }[] = []
+
+/**
+ * Play a specific list of track URIs starting at `offset`.
+ *
+ * Selections are coalesced, newest wins. Every click used to fire its own PUT
+ * /me/player/play, and Spotify gives no ordering guarantee across independent
+ * requests — so clicking 2,3,4,5 could be applied back-to-front and settle on 2,
+ * the track clicked first, while the UI showed 5. The burst also hammered the
+ * API hard enough to trip rate limiting.
+ *
+ * Only the newest intent is sent: older ones are replaced rather than queued
+ * behind it. Coalescing is safe because each selection is absolute (a list plus
+ * an offset, recomputed from state that already moved optimistically), so the
+ * newest request carries everything the earlier ones were asking for.
+ *
+ * Waiters settle together: a superseded caller is told what became of the
+ * request that replaced it. Rejecting it would raise an error banner for a
+ * selection the user has already moved past.
+ */
+export function playTracks(uris: string[], offset = 0, deviceId = getSpotifyDeviceId()): Promise<void> {
+  pendingPlay = { uris, offset, deviceId }
+  // Marked pending immediately rather than when the request goes out: the guard
+  // that ignores stale SDK events has to cover the settle window too, or an
+  // event for the track we are leaving would land while the click is still queued.
   setPendingTrackId(uris[offset]?.split(':').pop() ?? null)
-  const suffix = deviceId ? `?device_id=${encodeURIComponent(deviceId)}` : ''
+  const settled = new Promise<void>((resolve, reject) => playWaiters.push({ resolve, reject }))
+  if (pendingPlayTimer !== null) window.clearTimeout(pendingPlayTimer)
+  pendingPlayTimer = window.setTimeout(() => void flushPlay(), PLAY_SETTLE_MS)
+  return settled
+}
+
+async function flushPlay(): Promise<void> {
+  const intent = pendingPlay
+  const waiters = playWaiters
+  pendingPlay = null
+  pendingPlayTimer = null
+  playWaiters = []
+  if (!intent) return
+
+  const suffix = intent.deviceId ? `?device_id=${encodeURIComponent(intent.deviceId)}` : ''
   try {
     await spotifyApi<void>(`/me/player/play${suffix}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ uris, offset: { position: offset } }),
+      body: JSON.stringify({ uris: intent.uris, offset: { position: intent.offset } }),
     })
+    for (const waiter of waiters) waiter.resolve()
   } catch (err) {
     setPendingTrackId(null)
-    throw err
+    for (const waiter of waiters) waiter.reject(err)
   }
 }
 

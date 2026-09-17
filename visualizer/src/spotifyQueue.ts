@@ -29,14 +29,31 @@ import { useStore } from './store'
  * target — a mode toggled before playback started is otherwise simply absent
  * on the device that ends up playing, and natural track ends ignore it.
  * Best-effort: a failed mode must never abort playback.
+ *
+ * Each mode remembers what was last pushed, so an unchanged one is not sent
+ * again. That is two requests per selection, on every selection, which was most
+ * of what turned a burst of clicking into rate limiting; a mode only needs
+ * sending when it changes or when the device changes.
  */
+type RepeatMode = ReturnType<typeof spotifyRepeatState>
+
+let pushedRepeat: { deviceId: string | null; mode: RepeatMode } | null = null
+let pushedShuffle: { deviceId: string | null; on: boolean } | null = null
+
 export function applySpotifyTransportModes(deviceId: string | null = getSpotifyDeviceId()): void {
   const s = useStore.getState()
+  const repeat = spotifyRepeatState(s.repeatMode)
   const report = (err: unknown) => {
     useStore.getState().setSpotifyError(err instanceof Error ? err.message : String(err))
   }
-  setSpotifyRepeat(spotifyRepeatState(s.repeatMode), deviceId).catch(report)
-  setSpotifyShuffle(s.shuffle, deviceId).catch(report)
+  if (!pushedRepeat || pushedRepeat.deviceId !== deviceId || pushedRepeat.mode !== repeat) {
+    pushedRepeat = { deviceId, mode: repeat }
+    setSpotifyRepeat(repeat, deviceId).catch(report)
+  }
+  if (!pushedShuffle || pushedShuffle.deviceId !== deviceId || pushedShuffle.on !== s.shuffle) {
+    pushedShuffle = { deviceId, on: s.shuffle }
+    setSpotifyShuffle(s.shuffle, deviceId).catch(report)
+  }
 }
 
 async function advance(dir: 1 | -1): Promise<void> {
@@ -67,7 +84,13 @@ async function advance(dir: 1 | -1): Promise<void> {
     // pinned off — with it on, Spotify shuffles the fresh queue and plays some
     // other track than the one we just showed (and the pending-track guard
     // would then hide that mismatch). Both modes are re-applied afterwards.
-    if (s.shuffle) await setSpotifyShuffle(false, deviceId)
+    // Sets a mode that is not the session's, so the memo above can no longer
+    // describe the device — clearing it makes the call after playTracks restore
+    // shuffle instead of deciding it is already in sync and skipping.
+    if (s.shuffle) {
+      pushedShuffle = null
+      await setSpotifyShuffle(false, deviceId)
+    }
     await playTracks(list.map((t) => t.uri), next, deviceId)
     applySpotifyTransportModes(deviceId)
   } catch (err) {
