@@ -33,7 +33,21 @@ export default function AuroraSilkPreset() {
       varying vec2 vUv;
       uniform float uTime,uBass,uMid,uTreble,uHueShift,uIntensity,uComplexity,uAspect;
 
-      float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453123); }
+      // Hash without a sine (Dave Hoskins). The classic
+      // fract(sin(dot(p,k))*43758.5453) form evaluates sin() on an argument in
+      // the hundreds and then multiplies by ~4.4e4, so the range-reduction
+      // difference between GL implementations is amplified into a different
+      // hash cell: the smoke field decorrelates and the frame changes shape
+      // from one GPU to the next. This form is only +, *, dot and fract, all of
+      // which every implementation evaluates the same way, so the field is
+      // renderer-independent. It also feeds fbm twice over (the smoke input
+      // includes two fbm results), which is why any hash error here shows up
+      // multiplied rather than as a little grain.
+      float hash(vec2 p){
+        vec3 p3=fract(vec3(p.xyx)*0.1031);
+        p3+=dot(p3,p3.yzx+33.33);
+        return fract((p3.x+p3.y)*p3.z);
+      }
       float vnoise(vec2 p){
         vec2 i=floor(p), f=fract(p);
         vec2 u=f*f*(3.0-2.0*f);

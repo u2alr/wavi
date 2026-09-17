@@ -137,21 +137,28 @@ Three things make the comparison meaningful rather than flaky:
   lands differently between the two, the coarse structure lands the same way.
 
 A frame fails when more than 8% of cells are off by more than 12/255 in any
-channel — the allowance is there because a thin high-contrast feature (aurora
-silk's brightest ribbons) can land inside a cell on one renderer and on its
-boundary on another, which reads as one large delta and nothing else. The
+channel. Measured on both renderers that allowance is currently dormant — no cell
+of any preset is past the 12/255 tolerance, the worst being `auroraSilk` at 9
+against the GPU-captured references and 1 on the GPU itself — so it is headroom
+for a driver other than the two measured rather than a fix for a case that
+exists. A thin high-contrast feature can land inside a cell on one driver and on
+its boundary on another, which reads as one large delta and nothing else. The
 reference frames were captured on a Radeon; `--software-gl` reruns the sweep on
 SwiftShader and is how that independence is checked.
 
-**One preset is left out, and the run says so.** `auroraSilk` renders a
-renderer-dependent frame at this signal level: 170 of its 256 cells differ by up
-to 175/255 between a GPU and SwiftShader, where every other preset is within 6.
-Three captures of it on one renderer are byte-identical, so that is the GL
-implementation and not flakiness — a committed reference for it would fail CI
-against nothing. It is listed in `RENDERER_SENSITIVE` in the probe, with the
-numbers and the commands to re-measure, and reported as *not compared* on every
-run. It still gets the compile, mount and console checks; what is missing is its
-look.
+**A preset that rendered differently on different GPUs was fixed, not exempted.**
+`auroraSilk` measured 235 of its 256 cells differing by up to 175/255 between a
+GPU and SwiftShader, where every other preset is within 9. The cause was its
+noise hash: the familiar `fract(sin(dot(p, k)) * 43758.5453)` multiplies a
+`sin()` of an argument in the hundreds by ~4.4e4, and GL leaves the accuracy of
+`sin()` at large arguments to the implementation, so a range-reduction difference
+of a few units in the last place became a *different hash cell* — the noise field
+decorrelated and whole regions flipped across its smoke threshold. It now hashes
+without a sine, which every implementation evaluates identically, and the same
+measurement is 0 cells past tolerance. All 13 presets are compared.
+`RENDERER_SENSITIVE` in the probe is empty and kept, documented, as the escape
+hatch for a preset that genuinely cannot be made renderer-independent; it reports
+such a preset as *not compared* rather than counting it as covered.
 
 What it also cannot tell you: a change confined to a small part of the frame, or
 anything about motion. For an intended change of how a preset looks, run
@@ -167,8 +174,8 @@ if Chrome isn't in the usual place; otherwise it resolves one from `PATH`.
 CI runs it in the `viewport` job — GitHub's ubuntu runners ship Chrome, so
 nothing extra is installed — against the **built** bundle (`--server preview`)
 at 390x844, 844x390, 1024x768 and 1440x900, with both pointer types, sweeps
-every preset and compares the frames it can — 12 of 13, and around three and a
-half minutes for the whole job on SwiftShader. Run it locally whenever you touch
+every preset and compares all 13 reference frames — around three and a half
+minutes for the whole job on SwiftShader. Run it locally whenever you touch
 `src/styles/**`, a preset under `src/components/presets/`, or the narrow-viewport
 behaviour in `App.tsx`.
 

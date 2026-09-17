@@ -28,9 +28,9 @@
  * browser extension posts it, and runs a virtual clock that stops at a fixed
  * animation time. Both are needed: four presets (amPreset, am2Preset, waveform,
  * chromaticBurst) draw nothing at all without a signal, and on a real clock every
- * band-reactive preset would sit somewhere different on each run. auroraSilk is
- * the one preset left out of the comparison, because at this signal level its
- * frame is not renderer-independent — see RENDERER_SENSITIVE below.
+ * band-reactive preset would sit somewhere different on each run. Every swept
+ * preset is compared; RENDERER_SENSITIVE below is empty, and records what used to
+ * be in it and why that was a shader bug rather than a property to live with.
  *
  * Why this exists: `@media` rules here are spread over nine stylesheets imported
  * in a load-bearing order, so a same-specificity rule in theme.css silently kills
@@ -201,13 +201,16 @@ const GRID = 16
 // Per-channel, on a cell average. Well above renderer-to-renderer drift and far
 // below an actual visual change.
 const TOLERANCE = 12
-// ...and a few cells are allowed past it anyway. A thin high-contrast feature
-// (aurora silk's brightest ribbons) lands inside a cell on one renderer and on
-// the boundary on another, which reads as a large delta in that one cell while
-// leaving the rest of the frame untouched — sub-pixel phase, not a difference
-// anyone can see. Measured drift on the widest such case is 13 cells of 256, so
-// this is the smallest allowance with a margin over it. What it costs: a change
-// confined to a small part of the frame can hide in the allowance.
+// ...and a few cells are allowed past it anyway. Currently dormant: measured on
+// both a Radeon and SwiftShader against these references, no cell of any preset
+// is past the tolerance above (worst 9 across renderers, 1 on the renderer the
+// frames were captured on). It is headroom rather than a fix for a case that
+// exists, because those two renderers are not every renderer: a thin
+// high-contrast feature can land inside a cell on one driver and on the boundary
+// on another, which reads as a large delta in that single cell while leaving the
+// rest of the frame untouched — sub-pixel phase, not a difference anyone can see.
+// What it costs: a change confined to a small part of the frame can hide in the
+// allowance.
 const OUTLIER_FRACTION = 0.08
 const ALLOWED_CELLS = Math.round(GRID * GRID * OUTLIER_FRACTION)
 const BASELINE_DIR = 'scripts/probe-baselines'
@@ -283,20 +286,35 @@ function writeBaseline(preset, rows, renderer) {
  * no committed reference to compare against: CI renders through SwiftShader and
  * the references are captured on a GPU.
  *
- * Measured, not assumed. With the synthetic band level above, auroraSilk renders
- * a blown-out frame (mean 221 of 255) whose smoke threshold flips whole regions
- * one way or the other: 170 of 256 cells differ by up to 175 between renderers,
- * against 6 or less for every other preset. Three captures of it on one renderer
- * are byte-identical, so that is the renderer and not the probe. In silence its
- * frame does travel (it was compared before the sweep had audio) but it is a dim
- * frame that exercises none of the band code.
+ * Empty. Its only member was auroraSilk, and how it got here is worth keeping
+ * because the same bug will look nothing like it next time. auroraSilk's smoke
+ * field is a three-deep fbm whose hash was the familiar
  *
- * To re-measure, or to reconsider this list after a shader change: run the sweep
- * on both renderers with --json and diff the `frame` fields —
+ *   fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123)
+ *
+ * which evaluates sin() on an argument in the hundreds and multiplies by ~4.4e4.
+ * GL leaves the accuracy of sin() at large arguments to the implementation, so
+ * that factor turned a range-reduction difference of a few units in the last
+ * place into a different hash cell: the noise field decorrelated and whole
+ * regions flipped across its smoke threshold. It measured 235 of 256 cells
+ * differing by up to 175/255 between a Radeon and SwiftShader, against 9 or less
+ * for every other preset. Three captures of it on one renderer were
+ * byte-identical, so that was the renderer and not the probe.
+ *
+ * It is fixed rather than exempted. auroraSilk now hashes without a sine — the
+ * +, *, dot and fract form, which every implementation evaluates identically (see
+ * the comment in AuroraSilkPreset.tsx). The same measurement afterwards is 0
+ * cells past tolerance, worst 9.
+ *
+ * So prefer fixing the shader, and reach for this list only for a preset that is
+ * genuinely renderer-dependent and cannot be made not to be. It exists so that
+ * such a preset is reported as *not compared* on every run rather than quietly
+ * counting as covered. To measure one: run the sweep on both renderers with
+ * --json and diff the `frame` fields —
  *   npm run check:viewport -- --presets <id> --json
  *   npm run check:viewport -- --presets <id> --json --software-gl
  */
-const RENDERER_SENSITIVE = new Set(['auroraSilk'])
+const RENDERER_SENSITIVE = new Set([])
 
 /**
  * True for a frame that is uniformly black, i.e. the preset drew nothing. That
