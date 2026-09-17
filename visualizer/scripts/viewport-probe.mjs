@@ -32,6 +32,17 @@
  * preset is compared; RENDERER_SENSITIVE below is empty, and records what used to
  * be in it and why that was a shader bug rather than a property to live with.
  *
+ * One more mode, --server pages, serves the built bundle the way the host does:
+ * dist/ plus the rules in public/_headers, with the SPA fallback Cloudflare
+ * Pages applies when the build has no 404.html. That is the only way to probe
+ * the policy that actually ships — vite neither reads the header file nor sends
+ * it — and it comes with three assertions, because a policy check that cannot
+ * fail is worse than no check: the served CSP must match the file, a page load
+ * must produce no violations, and a deliberately blocked image must produce one
+ * anyway. That last one is the positive control: Chrome reports a violation
+ * only if the detector is wired up, so without it a green run is
+ * indistinguishable from a blind one.
+ *
  * Why this exists: `@media` rules here are spread over nine stylesheets imported
  * in a load-bearing order, so a same-specificity rule in theme.css silently kills
  * a touch rule in responsive.css with no build error. Only a real engine can
@@ -48,17 +59,28 @@
  *   npm run check:viewport -- --presets acidWash,brat
  *   npm run check:viewport -- --update-baselines  # after an intended look change
  *   npm run check:viewport -- --software-gl       # render like CI does
+ *   npm run check:viewport -- --server pages --presets none   # serve dist/ + the header
+ *                                                            # file, assert the shipped CSP
  *
  * Exit code is 1 when a failure-level finding is present (0 with --json unless
  * --fail is passed), which is how CI gates on it.
  */
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
+import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { extname, join, resolve } from 'node:path'
 
 const CDP_PORT = 9333
-const SERVER_PORTS = { dev: 5173, preview: 4173 }
+const SERVER_PORTS = { dev: 5173, preview: 4173, pages: 4180 }
 const DEFAULT_SIZES = [
   ['360x640', 360, 640, 2], // small Android
   ['390x844', 390, 844, 3], // iPhone 14
@@ -93,11 +115,17 @@ Usage: npm run check:viewport -- [options]
 
   --server=<mode>      dev (default) spawns the vite dev server; preview
                        spawns the vite preview server, i.e. probes the built
-                       bundle (run npm run build first).
+                       bundle (run npm run build first). pages serves dist/
+                       itself with the header rules from public/_headers and
+                       the SPA fallback, then asserts the CSP is clean, that
+                       it matches the file, and that a blocked resource is
+                       still reported. Pair it with --presets none and one
+                       --sizes entry for a fast policy check.
   --url=<url>          Page to probe (default http://127.0.0.1:<port>/).
                        An already-running server is reused; otherwise the one
-                       from --server is started and stopped afterwards.
-  --port=<number>      Port (default 5173 for dev, 4173 for preview).
+                       from --server is started and stopped afterwards. Not for
+                       pages, which always serves dist/ itself.
+  --port=<number>      Port (default 5173 dev, 4173 preview, 4180 pages).
   --sizes=<list>       Comma-separated WxH list, e.g. 320x568,768x1024.
   --pointer=<mode>     touch (default) | mouse | both.
   --no-audio           Skip loading audio fixtures. The player box and its
@@ -143,6 +171,8 @@ const JSON_OUT = has('json')
 const STRICT = has('strict')
 const UPDATE_BASELINES = has('update-baselines')
 const SOFTWARE_GL = has('software-gl')
+// Serves dist/ instead of spawning vite, and turns on the policy assertions.
+const PAGES_MODE = SERVER === 'pages'
 
 /* ── presets ────────────────────────────────────────────────────────── */
 
@@ -424,6 +454,167 @@ async function killTree(child) {
   await sleep(200)
 }
 
+/* ── pages mode: serve dist/ the way the host does ───────────────────── */
+
+// public/ is what vite copies verbatim into dist/, so that is where both the
+// header file and the routes file have to be authored for the host to read them.
+const PAGES_HEADER_FILE = 'public/_headers'
+const DIST_DIR = 'dist'
+
+const MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.ico': 'image/x-icon',
+  '.woff2': 'font/woff2',
+  '.mp4': 'video/mp4',
+  '.txt': 'text/plain; charset=utf-8',
+  '.map': 'application/json; charset=utf-8',
+}
+
+/**
+ * The subset of the _headers syntax this repo uses: a path pattern line followed
+ * by indented `Name: value` lines (or `! Name` to detach one).
+ *
+ * Anything outside that subset throws instead of quietly matching nothing. A
+ * pattern that this parser cannot evaluate would apply no headers, and the check
+ * below asks only whether the response carries the policy it expects — so an
+ * unparsed rule would read as "no violations" rather than as a broken check.
+ */
+function readHeaderRules(file = PAGES_HEADER_FILE) {
+  const path = join(process.cwd(), file)
+  let source
+  try {
+    source = readFileSync(path, 'utf8')
+  } catch {
+    throw new Error(`cannot read ${file} — it is what --server pages serves`)
+  }
+  const rules = []
+  let current = null
+  source.split(/\r?\n/).forEach((raw, index) => {
+    const line = raw.trim()
+    if (!line || line.startsWith('#')) return
+    if (/^\s/.test(raw)) {
+      const detach = line.startsWith('!')
+      const body = detach ? line.slice(1).trim() : line
+      const at = body.indexOf(':')
+      if (!current) throw new Error(`${file}:${index + 1}: header line before any path rule`)
+      if (at === -1) throw new Error(`${file}:${index + 1}: not a "Name: value" header`)
+      current.headers.push([
+        body.slice(0, at).trim().toLowerCase(),
+        detach ? null : body.slice(at + 1).trim(),
+      ])
+      return
+    }
+    if (line.includes(':')) {
+      throw new Error(
+        `${file}:${index + 1}: pattern "${line}" uses a host or placeholder, which this matcher does not implement`,
+      )
+    }
+    current = { pattern: line, headers: [] }
+    rules.push(current)
+  })
+  return rules
+}
+
+const escapeRe = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+/**
+ * Every header that applies to a request path. Matched against the request, not
+ * against the file that ends up serving it: Pages applies _headers rules to the
+ * incoming path, so the SPA fallback response for /callback is covered by a /*
+ * rule. A header set twice is joined with a comma, which is what Pages does.
+ */
+function headersForPath(rules, pathname) {
+  const out = new Map()
+  for (const rule of rules) {
+    const re = new RegExp(`^${rule.pattern.split('*').map(escapeRe).join('.*')}$`)
+    if (!re.test(pathname)) continue
+    for (const [name, value] of rule.headers) {
+      if (value === null) out.delete(name)
+      else out.set(name, out.has(name) ? `${out.get(name)}, ${value}` : value)
+    }
+  }
+  return out
+}
+
+/**
+ * The header rules that apply to a path, as the file declares them. The policy
+ * phase compares this against what the server actually sent; both sides come
+ * from this one parse, which is what makes it a canary for the server having
+ * applied what it read rather than a statement about the policy's content.
+ */
+function declaredHeaders(pathname, file = PAGES_HEADER_FILE) {
+  return headersForPath(readHeaderRules(file), pathname)
+}
+
+/**
+ * Serves dist/ with the header rules applied and the SPA fallback Pages uses.
+ * In-process on purpose: this is the one server vite cannot stand in for, since
+ * vite neither reads the header file nor sends what is in it.
+ */
+function startPagesServer({ port, distDir = DIST_DIR, headerFile = PAGES_HEADER_FILE }) {
+  const root = resolve(process.cwd(), distDir)
+  if (!existsSync(join(root, 'index.html'))) {
+    throw new Error(`${distDir}/index.html not found — run npm run build first`)
+  }
+  const rules = readHeaderRules(headerFile)
+  const fallback = !existsSync(join(root, '404.html'))
+
+  const server = createServer((req, res) => {
+    try {
+      // Split by hand rather than with `new URL`: this module already binds URL
+      // to the --url flag, which shadows the global constructor.
+      const pathname = decodeURIComponent((req.url ?? '/').split(/[?#]/)[0]) || '/'
+      let file = pathname === '/' ? join(root, 'index.html') : resolve(root, `.${pathname}`)
+      const usable = file.startsWith(root) && existsSync(file) && statSync(file).isFile()
+      if (!usable) {
+        // Pages' default behaviour with no 404.html in the build: unmatched paths
+        // render the root document with a 200. A 404.html disables it, so this
+        // mirrors that too rather than being more forgiving than the host.
+        if (!fallback) {
+          res.writeHead(404, { 'content-type': 'text/plain' })
+          res.end('not found')
+          return
+        }
+        file = join(root, 'index.html')
+      }
+      const headers = {
+        'content-type': MIME[extname(file).toLowerCase()] ?? 'application/octet-stream',
+        'content-length': String(statSync(file).size),
+        ...Object.fromEntries(headersForPath(rules, pathname)),
+      }
+      res.writeHead(200, headers)
+      res.end(readFileSync(file))
+    } catch (err) {
+      // A throw in here happens off the main flow, where it would kill the probe
+      // with a stack trace and no report at all. Answer instead: the page fails
+      // loudly and the policy phase's "did the app render" check says why.
+      res.writeHead(500, { 'content-type': 'text/plain' })
+      res.end(`pages server error: ${err instanceof Error ? err.message : err}`)
+    }
+  })
+
+  return new Promise((done, fail) => {
+    server.once('error', (err) => {
+      fail(
+        new Error(
+          err.code === 'EADDRINUSE'
+            ? `port ${port} is already in use — --server pages serves ${distDir}/ itself, so pass --port`
+            : `pages server failed: ${err.message}`,
+        ),
+      )
+    })
+    server.listen(port, '127.0.0.1', () => done(server))
+  })
+}
+
 /* ── fixtures ───────────────────────────────────────────────────────── */
 
 /** A valid WAV so the file input produces a real track (and a player box). */
@@ -669,7 +860,17 @@ function exceptionText(details) {
 // frame for.
 const ENV_NOISE = /failed to load resource|net::err|err_blocked|fonts\.(googleapis|gstatic)\.com/i
 
-const errorLevel = (entry) => (ENV_NOISE.test(entry.text) ? 'info' : 'failure')
+// A CSP refusal is tested before ENV_NOISE, and the order is the whole point: the
+// refusal for the Google font stylesheet reads "Loading the stylesheet
+// 'https://fonts.googleapis.com/css2?...' violates the following Content Security
+// Policy directive: ...", so the noise pattern above would match it and file the
+// exact thing --server pages exists to catch as environmental noise — silently,
+// which is the failure mode this mode was added to stop.
+const CSP_VIOLATION = /violates the following|content security policy/i
+const isCspViolation = (entry) => CSP_VIOLATION.test(entry.text)
+
+const errorLevel = (entry) =>
+  isCspViolation(entry) ? 'failure' : ENV_NOISE.test(entry.text) ? 'info' : 'failure'
 
 function analysePreset(preset, state, errors, menu, presetIds) {
   const findings = []
@@ -756,9 +957,14 @@ function analyseFrame(preset, first, second, baseline) {
 
 /* ── run ────────────────────────────────────────────────────────────── */
 
-const startedServer = !(await responds(URL))
-const serverLabel = startedServer ? `${SERVER} :${PORT} (started here)` : `${URL} (already running)`
+const startedServer = PAGES_MODE || !(await responds(URL))
+const serverLabel = PAGES_MODE
+  ? `${URL} — dist/ served here with ${PAGES_HEADER_FILE} applied`
+  : startedServer
+    ? `${SERVER} :${PORT} (started here)`
+    : `${URL} (already running)`
 let vite = null
+let pagesServer = null
 let chrome = null
 let ws = null
 let profile = null
@@ -766,7 +972,11 @@ let fixtureDir = null
 let chromePath = ''
 
 try {
-  if (startedServer) {
+  if (PAGES_MODE) {
+    // The built bundle, served with the header rules vite cannot apply. Started
+    // before Chrome so the first navigation cannot race it.
+    pagesServer = await startPagesServer({ port: PORT })
+  } else if (startedServer) {
     const mode = SERVER === 'preview' ? ['preview'] : []
     vite = spawn(
       process.execPath,
@@ -844,15 +1054,22 @@ try {
         }
       } else if (msg.method === 'Runtime.exceptionThrown') {
         pageErrors.push({ source: 'exception', text: exceptionText(msg.params.exceptionDetails) })
-      } else if (msg.method === 'Log.entryAdded' && msg.params.entry.level === 'error') {
-        const { source, text, url } = msg.params.entry
+      } else if (msg.method === 'Log.entryAdded') {
+        const { level, source, text, url } = msg.params.entry
         // The Log domain mirrors console and uncaught errors as 'javascript',
         // duplicating what is captured above. Take only browser-level entries:
         // failed resource loads and CSP violations.
         // The url is worth appending: "400" without it says nothing about what
         // was requested.
-        if (source !== 'javascript') {
-          pageErrors.push({ source: `log/${source}`, text: url ? `${text} — ${url}` : text })
+        const entry = { source: `log/${source}`, text: url ? `${text} — ${url}` : text }
+        // CSP refusals are taken at any level, not only 'error'. Measured: Chrome
+        // logs them at 'error', so today the wider test catches nothing extra —
+        // it is here so the policy check cannot go quietly blind if that level
+        // changes, or if a report-only policy starts reporting at 'warning'
+        // instead. Catching a refusal matters more than the exact level it
+        // arrives at, and the pattern is specific to CSP wording.
+        if (source !== 'javascript' && (level === 'error' || isCspViolation(entry))) {
+          pageErrors.push(entry)
         }
       }
     }
@@ -883,6 +1100,115 @@ try {
   await send('DOM.enable')
   await send('Runtime.enable')
   await send('Log.enable')
+
+  /* ── policy phase (--server pages) ─────────────────────────────────── */
+
+  /**
+   * What this proves, and what it does not. It proves the header file is applied
+   * to what is served, that the policy served is the one written in the file,
+   * that loading the app under it produces no refusals, and that a refusal would
+   * have been reported at all.
+   *
+   * It cannot prove the policy is *sufficient* for paths a probe run never takes:
+   * covers and the Web API need a Spotify login, canvas playback needs a real
+   * track. Those stay documented in the README instead of being counted here.
+   */
+  const policyFindings = []
+  if (PAGES_MODE) {
+    const addPolicy = (level, message) => policyFindings.push({ level, message })
+
+    const declaredCsp = declaredHeaders('/').get('content-security-policy')
+    if (!declaredCsp) {
+      // Distinguish "the file has no policy" from "the file's rules do not cover
+      // /": both leave / ungoverned, but only one of them is a rule-pattern bug,
+      // and "declares no policy" would send someone looking in the wrong place.
+      const declaredAnywhere = readHeaderRules().some((rule) =>
+        rule.headers.some(([name, value]) => name === 'content-security-policy' && value),
+      )
+      addPolicy(
+        'failure',
+        declaredAnywhere
+          ? `${PAGES_HEADER_FILE} declares a Content-Security-Policy, but no rule of it applies to / — check the path patterns`
+          : `${PAGES_HEADER_FILE} declares no Content-Security-Policy — there is nothing to enforce, and a regression would be invisible`,
+      )
+    }
+    // Anti-vacuity. Everything below is of the form "no violations seen", which
+    // an empty file and a server that applied nothing would report just as
+    // happily. Ask for the policy first, then ask the page.
+    //
+    // Both sides of this comparison come from one parse of one file, so it cannot
+    // fail because of what the policy says — it is a canary for this mode's own
+    // plumbing, i.e. for the server having stopped applying what it read.
+    const servedCsp = (await fetch(URL)).headers.get('content-security-policy')
+    if (declaredCsp && servedCsp !== declaredCsp) {
+      addPolicy(
+        'failure',
+        `the policy served on / is not the one in ${PAGES_HEADER_FILE}: ${
+          servedCsp ? `served "${servedCsp}"` : 'no Content-Security-Policy header at all'
+        }`,
+      )
+    }
+
+    // A fresh load of the app, errors captured. Chrome reports a refusal as a
+    // security entry naming both the directive and the URL, and that message is
+    // the whole diagnosis.
+    pageErrors = []
+    captureErrors = true
+    events.length = 0
+    await send('Page.navigate', { url: URL })
+    for (let i = 0; i < 80 && !events.includes('Page.loadEventFired'); i++) await sleep(250)
+    // Poll for the app rather than sleeping a flat amount: CI renders on
+    // SwiftShader and is slower than a laptop, and a slow first paint must not
+    // read as "the app did not render".
+    const APP_BOOTED = `(() => { const root = document.querySelector('#root'); return !!root && root.children.length > 0; })()`
+    let booted = false
+    for (let i = 0; i < 40 && !booted; i++) {
+      booted = await evaluate(APP_BOOTED)
+      if (!booted) await sleep(250)
+    }
+    // Then give the late arrivals time to land: the font stylesheet and the
+    // lazily imported Scene chunk both come after the first render, and a refusal
+    // for either is one of the things this phase exists to catch.
+    await sleep(1500)
+    // "No violations" only says something if the app actually loaded: a 404, a
+    // blank document or a blocked entry script would otherwise pass this phase.
+    if (!booted) {
+      addPolicy('failure', 'the app rendered nothing — there was no page to check the policy against')
+    }
+    const onLoad = pageErrors.slice()
+    for (const entry of onLoad) addPolicy(errorLevel(entry), `${entry.source}: ${entry.text}`)
+    if (!onLoad.some(isCspViolation)) addPolicy('info', 'no CSP violation on load')
+
+    // The positive control. Both requests are refused by the browser before any
+    // DNS lookup, so this needs no network and cannot be confused with a host
+    // that merely fails to resolve.
+    pageErrors = []
+    await evaluate(`(() => {
+      const img = document.createElement('img');
+      img.src = 'https://csp-control.invalid/pixel.png';
+      document.body.appendChild(img);
+      fetch('https://csp-control.invalid/control.json').catch(() => {});
+      return true;
+    })()`)
+    let control = []
+    for (let i = 0; i < 20 && !control.length; i++) {
+      await sleep(250)
+      control = pageErrors.filter(isCspViolation)
+    }
+    if (control.length) {
+      const directive = control[0].text.match(/directive:\s*([^;"\s]+)/)?.[1]
+      addPolicy(
+        'info',
+        `detector proven — deliberately blocked resources were reported (${directive ? `${directive} ` : ''}${control.length} refusal(s))`,
+      )
+    } else {
+      addPolicy(
+        'failure',
+        'the detector did not fire: a blocked image and fetch produced no refusal report, so "no violations" above proves nothing (is the policy permissive enough to allow them?)',
+      )
+    }
+    captureErrors = false
+  }
 
   /**
    * Virtual animation clock, installed for the sweep only. It starts paused: the
@@ -1177,14 +1503,27 @@ try {
 
   /* ── output ──────────────────────────────────────────────────────── */
 
-  const runFindings = [...results, ...presetRuns].flatMap((r) => r.findings)
+  const runFindings = [
+    ...policyFindings,
+    ...results.flatMap((r) => r.findings),
+    ...presetRuns.flatMap((r) => r.findings),
+  ]
   const failures = runFindings.filter((f) => f.level === 'failure').length
   const infos = runFindings.filter((f) => f.level === 'info').length
 
   if (JSON_OUT) {
     console.log(
       JSON.stringify(
-        { url: URL, server: serverLabel, chrome: chromePath, results, presets: presetRuns, failures, infos },
+        {
+          url: URL,
+          server: serverLabel,
+          chrome: chromePath,
+          ...(PAGES_MODE ? { policy: policyFindings } : {}),
+          results,
+          presets: presetRuns,
+          failures,
+          infos,
+        },
         null,
         2,
       ),
@@ -1196,6 +1535,14 @@ try {
     console.log(
       `${results.length} viewport runs, ${presetRuns.length} preset runs, ${failures} failure(s), ${infos} info`,
     )
+    if (PAGES_MODE) {
+      const failed = policyFindings.filter((f) => f.level === 'failure')
+      const noted = policyFindings.filter((f) => f.level === 'info')
+      const status = failed.length ? 'FAIL' : noted.length ? 'note' : ' ok '
+      console.log(`\n[${status}] policy — ${PAGES_HEADER_FILE}, served from ${DIST_DIR}/`)
+      for (const f of failed) console.log(`   ✗ ${f.message}`)
+      for (const f of noted) console.log(`   · ${f.message}`)
+    }
     for (const result of results) {
       const failed = result.findings.filter((f) => f.level === 'failure')
       const noted = result.findings.filter((f) => f.level === 'info')
@@ -1264,6 +1611,7 @@ try {
   }
   await killTree(chrome)
   await killTree(vite)
+  pagesServer?.close()
   for (const dir of [profile, fixtureDir]) {
     if (!dir) continue
     try {

@@ -45,6 +45,23 @@ jobs:
       - run: npm ci
       - run: npm run build
 
+      # The shipped Content-Security-Policy, checked before the sweep below
+      # because it takes seconds and a broken policy should not queue behind it.
+      # This is the only step that serves public/_headers — vite neither reads
+      # the header file nor sends it, so without this step a policy regression is
+      # invisible until production. Three assertions, from one page load: the
+      # served policy matches the file, loading the app under it produces no
+      # refusal, and a deliberately blocked image and fetch are still reported
+      # (the control — without it, "no violations" could just as well mean a
+      # detector that is not wired up).
+      - name: Check the shipped Content-Security-Policy
+        run: >-
+          npm run check:viewport --
+          --server pages
+          --sizes 390x844
+          --pointer touch
+          --presets none
+
       # Probes the built bundle (not the dev server) so production CSS and
       # chunking are what gets measured. Phone portrait + landscape, tablet and
       # desktop, with both a touch and a mouse pointer. The same run also sweeps

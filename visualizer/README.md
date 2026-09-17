@@ -166,7 +166,40 @@ anything about motion. For an intended change of how a preset looks, run
 regenerated file. A preset with no reference frame at all fails the run, so
 adding one means recording it.
 
-Options: `--server dev|preview`, `--sizes WxH,WxH`, `--pointer touch|mouse|both`,
+### Policy check (`--server pages`)
+
+`public/_headers` is not read by vite, not served by `--server preview` and not
+validated by anything else, so the shipped policy used to rest on a hand-run
+check. `--server pages` makes it automatic: it serves `dist/` in-process with the
+header rules from `public/_headers` applied, plus the SPA fallback Pages applies
+when the build has no `404.html`, and loads the app under that policy.
+
+Three assertions come out of that one load. The third is what makes the first two
+worth anything:
+
+- **the served policy is the policy that was written** — the response for `/`
+  has to carry exactly the `Content-Security-Policy` the file declares. Without
+  this, "no violations" would be reported just as happily by a file containing no
+  policy at all, since a page with no policy can never violate one.
+- **the load is clean** — any refusal Chrome reports is a failure, naming the
+  directive and the blocked URL. It has to be classified as a failure *before*
+  resource-load noise: the refusal for the Google font stylesheet contains
+  `fonts.googleapis.com`, so the noise pattern would otherwise swallow it.
+- **the detector works** — a deliberately blocked image and `fetch` are injected
+  and at least one refusal must come back, or the run fails saying the clean
+  result above proves nothing. Both are refused before any DNS lookup, so this
+  needs no network and cannot be confused with a host that merely fails to
+  resolve.
+
+The guards are checked against themselves, because a policy check that cannot
+fail is worse than none: with the font origin removed from `style-src` the run
+exits 1 naming `style-src 'self' 'unsafe-inline'` and the blocked stylesheet; with
+a rule pattern that does not cover `/` it exits 1 saying the declared policy does
+not apply there; with a policy permissive enough to allow the control's hosts it
+exits 1 saying it can no longer prove anything; and if the server stops applying
+the rules it read, it exits 1 on the mismatch between file and response.
+
+Options: `--server dev|preview|pages`, `--sizes WxH,WxH`, `--pointer touch|mouse|both`,
 `--presets all|none|id,id`, `--update-baselines`, `--software-gl`, `--json`,
 `--strict` (fail on info too), `--no-audio`. Set `CHROME_PATH` (or `CHROME_BIN`)
 if Chrome isn't in the usual place; otherwise it resolves one from `PATH`.
@@ -175,9 +208,12 @@ CI runs it in the `viewport` job — GitHub's ubuntu runners ship Chrome, so
 nothing extra is installed — against the **built** bundle (`--server preview`)
 at 390x844, 844x390, 1024x768 and 1440x900, with both pointer types, sweeps
 every preset and compares all 13 reference frames — around three and a half
-minutes for the whole job on SwiftShader. Run it locally whenever you touch
-`src/styles/**`, a preset under `src/components/presets/`, or the narrow-viewport
-behaviour in `App.tsx`.
+minutes for the whole job on SwiftShader. A second step in the same job runs the
+policy check above (`--server pages --presets none`), and runs it *first*: it
+takes seconds, and a broken policy should not wait behind the sweep to be
+reported. Run it locally whenever you touch `src/styles/**`, a preset under
+`src/components/presets/`, `public/_headers`, or the narrow-viewport behaviour in
+`App.tsx`.
 
 ## Architecture
 
@@ -288,15 +324,15 @@ cover URLs the API hands out and that set changes:
   `Access-Control-Allow-Origin: *` and the preset sets `crossOrigin` — so the
   policy was the only thing in the way.
 
-Nothing in CI reads `_headers`, and vite neither serves nor validates these
-headers (`--server preview` sends none of them), so a policy regression is
-invisible until production. The policy was checked by hand against the built
-bundle, served with the header values parsed out of the config and loaded in
-Chrome for 8 viewport runs and all 13 presets: zero violations, with the detector
-proven first by dropping a font origin and watching the violation appear. The
-`media-src` rule above is **not** covered by that check — canvas playback needs a
-real Spotify login — which is why it rests on the two measurements recorded here
-instead.
+`--server pages` is what holds this down: it serves `dist/` with the rules from
+this file and asserts the shipped policy (see **Policy check** under the
+responsive checks). Its assertions were exercised by breaking the policy on
+purpose, in each direction — see that section for what each break reports.
+
+What that check still cannot reach is a path a probe run never takes: covers and
+the Web API need a Spotify login, and canvas playback needs a real track. The
+`media-src` rule above is exactly such a path, so it rests on the two
+measurements recorded here rather than on a test.
 
 ## Known limitations
 
