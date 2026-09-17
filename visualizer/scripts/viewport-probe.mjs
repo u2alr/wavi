@@ -24,10 +24,13 @@
  * real GPU, and per-pixel noise differs between the two while the structure does
  * not — so subtle regressions still need eyes on the actual thing.
  *
- * Loud exception: the sweep loads no audio, and four presets (amPreset, am2Preset,
- * waveform, chromaticBurst) draw nothing at all without it. Their reference
- * frames are black, which can only ever catch "it started drawing something", so
- * the run reports them as not compared rather than reporting a pass.
+ * The sweep feeds the presets a fixed synthetic spectrum, posted the way the
+ * browser extension posts it, and runs a virtual clock that stops at a fixed
+ * animation time. Both are needed: four presets (amPreset, am2Preset, waveform,
+ * chromaticBurst) draw nothing at all without a signal, and on a real clock every
+ * band-reactive preset would sit somewhere different on each run. auroraSilk is
+ * the one preset left out of the comparison, because at this signal level its
+ * frame is not renderer-independent — see RENDERER_SENSITIVE below.
  *
  * Why this exists: `@media` rules here are spread over nine stylesheets imported
  * in a load-bearing order, so a same-specificity rule in theme.css silently kills
@@ -107,7 +110,8 @@ Usage: npm run check:viewport -- [options]
                        editing this script.
   --update-baselines   Rewrite scripts/probe-baselines/ from this run instead of
                        comparing against it. Use after an intended change to how
-                       a preset looks, then commit the files.
+                       a preset looks, or to the synthetic signal, then commit
+                       the files.
   --software-gl        Force Chrome onto SwiftShader. That is what CI renders
                        with, so this is how the reference frames are checked for
                        renderer independence.
@@ -207,12 +211,44 @@ const TOLERANCE = 12
 const OUTLIER_FRACTION = 0.08
 const ALLOWED_CELLS = Math.round(GRID * GRID * OUTLIER_FRACTION)
 const BASELINE_DIR = 'scripts/probe-baselines'
-// Every preset drives its uTime from state.clock.elapsedTime, which three reads
-// from performance.now(). With that pinned (see the sweep below) each preset
-// sits at the same animation time in every run and on every machine. A few
-// seconds in, so the patterns have their settled shape rather than the
-// degenerate first frame.
-const CAPTURE_CLOCK_MS = 12000
+// The sweep runs a virtual clock: performance.now() advances by a fixed step per
+// animation frame and stops at a fixed total (see VIRTUAL_CLOCK). Every preset
+// drives its uTime from state.clock.elapsedTime, which three reads from
+// performance.now(), and the analysis engine's envelopes advance off the same
+// value — on a real clock both would sit wherever the machine happened to be,
+// and two runs of identical code would not match. 12s of virtual time is far
+// enough in for the patterns and the followers to have settled.
+const VIRTUAL_STEP_MS = 200
+const CAPTURE_FRAMES = 60
+const CAPTURE_CLOCK_MS = VIRTUAL_STEP_MS * CAPTURE_FRAMES
+
+/**
+ * The audio the sweep renders with, posted the way the browser extension posts
+ * it — the app listens for exactly this shape (App.tsx, 'visualizer-audio-
+ * extension'). Deterministic by construction: a fixed formula, no randomness, no
+ * decoder, no playback position. Playing a real file instead would leave every
+ * band-reactive preset at a different point in the track on every run.
+ *
+ * A music-shaped spectrum, so the seven visual bands differ from each other
+ * rather than all reading one number, and a two-component waveform so the AM and
+ * waveform presets have a trace worth drawing.
+ */
+/** Level the preset band maths reads back: bass 0.74, mid 0.28, treble 0.08. */
+const SYNTHETIC_AUDIO = (() => {
+  const bins = []
+  for (let i = 0; i < 256; i++) {
+    const tilt = Math.exp(-i / 55)
+    const ripple = 0.5 + 0.5 * Math.sin(i / 9.5)
+    bins.push(Math.round(10 + 235 * tilt * (0.6 + 0.4 * ripple)))
+  }
+  const wave = []
+  for (let i = 0; i < 2048; i++) {
+    const t = i / 2048
+    const v = 0.62 * Math.sin(2 * Math.PI * 3 * t) + 0.24 * Math.sin(2 * Math.PI * 7 * t + 0.7)
+    wave.push(Math.round(128 + 112 * v))
+  }
+  return { signal: 190, bins, wave }
+})()
 
 const baselinePath = (preset) => join(BASELINE_DIR, `${preset}.json`)
 /** Same path in the shape it is written in the repo, for messages. */
@@ -235,15 +271,37 @@ function writeBaseline(preset, rows, renderer) {
     ['size', JSON.stringify(SWEEP.size[0])],
     ['grid', String(GRID)],
     ['renderer', JSON.stringify(renderer ?? 'unknown')],
+    // The captured frame depends on the signal, so record which one it was.
+    ['audio', JSON.stringify('synthetic')],
   ]
   const head = meta.map(([k, v]) => `  "${k}": ${v}`).join(',\n')
   writeFileSync(baselinePath(preset), `{\n${head},\n  "rows": [\n${body}\n  ]\n}\n`)
 }
 
 /**
- * True for a frame that is uniformly black, i.e. the preset drew nothing. Four
- * presets are in that state in this sweep (see analyseFrame) because they need
- * audio to draw at all, and the sweep loads none.
+ * Presets whose rendered frame differs between GL implementations, so they have
+ * no committed reference to compare against: CI renders through SwiftShader and
+ * the references are captured on a GPU.
+ *
+ * Measured, not assumed. With the synthetic band level above, auroraSilk renders
+ * a blown-out frame (mean 221 of 255) whose smoke threshold flips whole regions
+ * one way or the other: 170 of 256 cells differ by up to 175 between renderers,
+ * against 6 or less for every other preset. Three captures of it on one renderer
+ * are byte-identical, so that is the renderer and not the probe. In silence its
+ * frame does travel (it was compared before the sweep had audio) but it is a dim
+ * frame that exercises none of the band code.
+ *
+ * To re-measure, or to reconsider this list after a shader change: run the sweep
+ * on both renderers with --json and diff the `frame` fields —
+ *   npm run check:viewport -- --presets <id> --json
+ *   npm run check:viewport -- --presets <id> --json --software-gl
+ */
+const RENDERER_SENSITIVE = new Set(['auroraSilk'])
+
+/**
+ * True for a frame that is uniformly black, i.e. the preset drew nothing. That
+ * is what a preset needing audio looked like before the sweep had any — a state
+ * the run reports rather than calls a pass.
  */
 const isBlank = (rows) => rows.every((row) => row.every((c) => c[0] <= 4 && c[1] <= 4 && c[2] <= 4))
 
@@ -809,16 +867,51 @@ try {
   await send('Log.enable')
 
   /**
-   * Frozen animation clock, installed for the sweep only (see the sweep below).
-   * It is a mutable cell rather than a fixed value so a capture can happen at a
-   * chosen animation time: uTime 0 is a degenerate frame for several presets.
+   * Virtual animation clock, installed for the sweep only. It starts paused: the
+   * app mounts at virtual time 0, the synthetic audio goes in, and only then does
+   * the probe start stepping. That order matters — if the audio arrived part way
+   * through, the analysis envelopes would be somewhere in a transition that
+   * depends on how long the page took to mount.
+   *
+   * The clock stops itself at exactly CAPTURE_CLOCK_MS, so the captured frame is
+   * a function of the code alone rather than of how long anything took. The
+   * layout runs above stay on the real clock: an entrance animation frozen
+   * mid-flight would move the very things they measure.
    */
-  const FREEZE_CLOCK = `
+  const VIRTUAL_CLOCK = `
     (() => {
-      window.__probeClockMs = 0;
-      performance.now = () => window.__probeClockMs;
+      window.__probeMs = 0;
+      window.__probeStep = 0;
+      window.__probeFrames = 0;
+      performance.now = () => window.__probeMs;
+      const tick = () => {
+        if (window.__probeStep > 0) {
+          window.__probeMs += window.__probeStep;
+          window.__probeFrames++;
+          if (window.__probeMs >= ${CAPTURE_CLOCK_MS}) {
+            window.__probeMs = ${CAPTURE_CLOCK_MS};
+            window.__probeStep = 0;
+          }
+        }
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
     })();
   `
+
+  const START_CLOCK = `(window.__probeStep = ${VIRTUAL_STEP_MS})`
+  const CLOCK_STATE = `({
+    ms: window.__probeMs,
+    frames: window.__probeFrames,
+    running: window.__probeStep > 0,
+  })`
+  const AUDIO_PAYLOAD = `(window.postMessage({
+    source: 'visualizer-audio-extension',
+    type: 'audio-data',
+    signal: ${SYNTHETIC_AUDIO.signal},
+    bins: ${JSON.stringify(SYNTHETIC_AUDIO.bins)},
+    wave: ${JSON.stringify(SYNTHETIC_AUDIO.wave)},
+  }, '*'), true)`
 
   /** The canvas rect in CSS px, for the screenshot clip. */
   const canvasBox = async () => {
@@ -839,9 +932,8 @@ try {
    * would actually see.
    */
   const captureFrame = async () => {
-    await evaluate(`window.__probeClockMs = ${CAPTURE_CLOCK_MS}`)
-    // Let the shader draw a frame at that time before reading it.
-    await sleep(400)
+    // The clock is stopped by now, so this is just room for a frame to draw.
+    await sleep(300)
     const box = await canvasBox()
     if (!box) return null
     const shot = await send('Page.captureScreenshot', {
@@ -851,6 +943,23 @@ try {
       clip: { x: box.x, y: box.y, width: box.width, height: box.height, scale: 0.25 },
     })
     return evaluate(DECODE_GRID(shot.data), { awaitPromise: true })
+  }
+
+  /**
+   * Hand the app the synthetic audio, then run the virtual clock to the capture
+   * frame. Returns the clock state, which says whether the run got there.
+   */
+  const simulate = async () => {
+    await evaluate(AUDIO_PAYLOAD)
+    await evaluate(START_CLOCK)
+    let state = { ms: 0, frames: 0, running: true }
+    // 60 frames of a full-screen shader is a second or two on a GPU and can be
+    // twenty on SwiftShader, hence the generous ceiling.
+    for (let i = 0; i < 150 && state.running; i++) {
+      await sleep(100)
+      state = await evaluate(CLOCK_STATE)
+    }
+    return state
   }
 
   const results = []
@@ -951,7 +1060,7 @@ try {
     // The layout runs above stay on the real clock on purpose: an entrance
     // animation frozen mid-flight would move the very things they measure.
     const clockScript = await send('Page.addScriptToEvaluateOnNewDocument', {
-      source: FREEZE_CLOCK,
+      source: VIRTUAL_CLOCK,
     })
 
     for (const preset of PRESETS) {
@@ -980,6 +1089,12 @@ try {
       }
       await sleep(1200)
       state = await evaluate(PRESET_STATE)
+
+      // Synthetic audio in, then the virtual clock stepped to the capture frame:
+      // nothing visual is measured until the app has had a full, fixed run of
+      // simulated time with the signal present.
+      const clock = await simulate()
+
       await evaluate(TOGGLE_PRESETS_MENU)
       await sleep(150)
       const menu = await evaluate(READ_CHECKED_PRESET)
@@ -992,9 +1107,24 @@ try {
       captureErrors = false
 
       const findings = analysePreset(preset, state, pageErrors, menu, PRESET_IDS)
+      if (clock.running) {
+        findings.push({
+          level: 'info',
+          message: `the virtual clock did not reach the capture frame (${clock.ms}ms after ${clock.frames} frames) — the frame is not settled`,
+        })
+      }
+      // A renderer-sensitive preset has no reference to hold it to (see
+      // RENDERER_SENSITIVE). Say so on every run, in both modes, rather than
+      // quietly counting it as covered.
       let compared = false
       let written = false
-      if (UPDATE_BASELINES) {
+      if (RENDERER_SENSITIVE.has(preset)) {
+        findings.push({
+          level: 'info',
+          message:
+            'not compared — its frame is not renderer-independent (see RENDERER_SENSITIVE in this script)',
+        })
+      } else if (UPDATE_BASELINES) {
         if (first) {
           writeBaseline(preset, first, state.renderer)
           written = true
@@ -1011,6 +1141,7 @@ try {
         pointer: sweepPointer,
         size: sweepSize,
         state,
+        clock,
         menu,
         errors: pageErrors,
         // The capture itself, so a --json report says what was actually seen

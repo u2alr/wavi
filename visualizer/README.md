@@ -117,13 +117,21 @@ looks right: a black or blank frame, the wrong palette, a uniform that stopped
 being written. There is one JSON file per preset; each is 16 rows of 16 average
 cell colours, small and diffable on purpose.
 
-Two things make the comparison meaningful rather than flaky:
+Three things make the comparison meaningful rather than flaky:
 
-- **The animation clock is frozen** (to `uTime` 12s) for the sweep only. Every
-  preset drives `uTime` from `state.clock.elapsedTime`, which three reads from
-  `performance.now()`, so an unfrozen frame differs slightly on every run and a
-  reference would mean nothing. The layout runs above stay on the real clock: an
-  entrance animation frozen mid-flight would move the very things they measure.
+- **The animation clock is virtual** for the sweep only: `performance.now()`
+  steps a fixed 200ms per animation frame and stops at exactly 12s. Every preset
+  drives `uTime` from `state.clock.elapsedTime`, which three reads from that same
+  value, and the analysis engine's envelopes advance off it too — on a real clock
+  both would sit wherever the machine happened to be, and two runs of identical
+  code would not match. The layout runs above stay on the real clock: an entrance
+  animation frozen mid-flight would move the very things they measure.
+- **The presets are driven with a fixed synthetic signal**, posted the way the
+  browser extension posts it. Four of them (`amPreset`, `am2Preset`, `waveform`,
+  `chromaticBurst`) draw nothing at all without one, so their references would be
+  black; playing a real file instead would leave every band-reactive preset at a
+  different point in the track on each run. The signal is a formula, not
+  randomness, and the level it produces is recorded in each reference file.
 - **It compares cell averages, not pixels.** CI has no GPU and renders through
   SwiftShader; a developer's machine renders on real hardware. Per-pixel noise
   lands differently between the two, the coarse structure lands the same way.
@@ -135,14 +143,15 @@ boundary on another, which reads as one large delta and nothing else. The
 reference frames were captured on a Radeon; `--software-gl` reruns the sweep on
 SwiftShader and is how that independence is checked.
 
-**Four presets are not covered by this, and the run says so.** `amPreset`,
-`am2Preset`, `waveform` and `chromaticBurst` draw nothing at all without audio,
-and the sweep loads none (it renders in silence for the sake of a stable frame —
-a playing track would make every band-reactive preset different on each run).
-Their reference frames are black, which could only ever catch "it started
-drawing something", so the run reports them as *not compared* instead of a pass.
-They are still covered by the compile, mount and console checks above; what is
-missing is their look.
+**One preset is left out, and the run says so.** `auroraSilk` renders a
+renderer-dependent frame at this signal level: 170 of its 256 cells differ by up
+to 175/255 between a GPU and SwiftShader, where every other preset is within 6.
+Three captures of it on one renderer are byte-identical, so that is the GL
+implementation and not flakiness — a committed reference for it would fail CI
+against nothing. It is listed in `RENDERER_SENSITIVE` in the probe, with the
+numbers and the commands to re-measure, and reported as *not compared* on every
+run. It still gets the compile, mount and console checks; what is missing is its
+look.
 
 What it also cannot tell you: a change confined to a small part of the frame, or
 anything about motion. For an intended change of how a preset looks, run
@@ -158,7 +167,8 @@ if Chrome isn't in the usual place; otherwise it resolves one from `PATH`.
 CI runs it in the `viewport` job — GitHub's ubuntu runners ship Chrome, so
 nothing extra is installed — against the **built** bundle (`--server preview`)
 at 390x844, 844x390, 1024x768 and 1440x900, with both pointer types, sweeps
-every preset and compares the frames it can. Run it locally whenever you touch
+every preset and compares the frames it can — 12 of 13, and around three and a
+half minutes for the whole job on SwiftShader. Run it locally whenever you touch
 `src/styles/**`, a preset under `src/components/presets/`, or the narrow-viewport
 behaviour in `App.tsx`.
 

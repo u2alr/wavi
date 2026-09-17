@@ -54,7 +54,8 @@ jobs:
       # preset is then compared against its committed frame in
       # visualizer/scripts/probe-baselines/ — this runner renders on SwiftShader
       # while those were captured on a GPU, which is why the comparison is a grid
-      # of cell averages with a tolerance rather than a pixel diff.
+      # of cell averages with a tolerance rather than a pixel diff, and why the
+      # one renderer-sensitive preset is reported as skipped rather than failed.
       - name: Probe viewports, presets and frames
         run: >-
           npm run check:viewport --
