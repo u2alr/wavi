@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { PRESET_LABELS, PRESET_TYPES } from './presets'
 import {
   hasStoredPanelPref,
   presetParamsFor,
   PRESET_ID_RENAMES,
   resolvePresetId,
+  useStore,
   type PresetParams,
 } from './store'
 
@@ -40,6 +42,20 @@ describe('hasStoredPanelPref', () => {
   it('ignores a blob that never chose a panel state', () => {
     localStorage.setItem('viz-ui-prefs', JSON.stringify({ v: 1, volume: 0.5 }))
     expect(hasStoredPanelPref()).toBe(false)
+  })
+})
+
+describe('the default preset', () => {
+  // The list leads with the default look, so the menu opens on it and the A/D
+  // cycle starts there. The id itself is written out in the store rather than
+  // derived, so this is what keeps a reorder from drifting away from it.
+  it('is the first entry of PRESET_TYPES', () => {
+    expect(useStore.getState().currentPreset).toBe(PRESET_TYPES[0])
+  })
+
+  it('is a preset the list and the labels both know', () => {
+    expect(PRESET_TYPES).toContain(useStore.getState().currentPreset)
+    expect(PRESET_LABELS[useStore.getState().currentPreset]).toBeTruthy()
   })
 })
 

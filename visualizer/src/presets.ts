@@ -1,5 +1,8 @@
-// Canonical preset list. Order also drives the A/D keyboard cycle.
+// Canonical preset list. The first entry is the preset the app opens on, so the
+// default look leads both the Presets menu and the A/D keyboard cycle; store.ts
+// holds that same id and a test keeps the two from drifting apart.
 export const PRESET_TYPES = [
+  'mellow1',
   'amPreset',
   'am2Preset',
   'prismaticTempest',
@@ -9,11 +12,12 @@ export const PRESET_TYPES = [
   'canvasAmbient2',
   'waveform',
   'acidWash',
-  'mellow1',
   'chromaticBurst',
 ]
 
+// Kept in the same order as the list above, so the two read together.
 export const PRESET_LABELS: Record<string, string> = {
+  mellow1: 'Mellow 1',
   amPreset: 'AM Preset',
   am2Preset: 'AM2',
   prismaticTempest: 'Prismatic Tempest',
@@ -23,6 +27,5 @@ export const PRESET_LABELS: Record<string, string> = {
   canvasAmbient2: 'Canvas Ambient 2',
   waveform: 'Waveform',
   acidWash: 'Acid Wash',
-  mellow1: 'Mellow 1',
   chromaticBurst: 'Chromatic Burst',
 }

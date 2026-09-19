@@ -282,6 +282,8 @@ export function hasStoredPanelPref(): boolean {
 }
 
 export const useStore = create<Store>((set, get) => ({
+  // The first entry of PRESET_TYPES, which is where the default look leads the
+  // Presets menu and the A/D cycle. A test pins the two together.
   currentPreset: 'mellow1',
   presetParams: {},
   playlist: [],
