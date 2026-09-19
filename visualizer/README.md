@@ -73,6 +73,7 @@ src/
   audio.ts            local <audio> graph (AudioContext + analyser)
   windowFocus.ts      focus/visibility predicate behind "pause when unfocused"
   frameStats.ts       rendered frames per second, counted inside the canvas
+  renderScale.ts      adaptive canvas resolution, for GPUs that cannot fill it
   analyser/           FFT/DSP pipeline behind the shader uniforms
   spotify.ts          OAuth PKCE + Web API client (typed errors, dedup refresh)
   spotifyPlayer.ts    Web Playback SDK wrapper
@@ -109,6 +110,21 @@ Notes:
   display's refresh rate no matter what the frame-rate cap is doing, so a cap of
   30 still read as 60 and the cap looked inert. It reads 0 while the scene is
   parked, which makes the status bar a way to see the pause working.
+- **Canvas resolution adapts to the machine.** Every preset is one full-screen
+  fragment shader, so a frame costs pixels × shader cost, and the only lever
+  that cuts that without changing the look is filling fewer pixels.
+  `renderScale.ts` drops the canvas' device pixel ratio (floor 0.6 — 36% of the
+  pixels) after two consecutive windows draw under a third of the rate the cap
+  asked for, and returns to full resolution when the preset or the cap changes.
+  Measured on a software rasteriser at a fixed canvas size: 16 fps at full
+  resolution, 32–35 fps at the floor. It deliberately does not compare against
+  the display's refresh rate: the drawing happens on the thread that serves
+  `requestAnimationFrame`, so the measured cadence *is* the rate the app is
+  achieving, and the comparison would be a number against itself. The trade is
+  that the cap and the display are different numbers, so a display genuinely
+  running at a third of the cap is indistinguishable from a machine that cannot
+  keep up; the water mark sits below the ordinary case (a 60Hz panel holding
+  the default 120 cap is at half the target), so healthy machines never move.
 - `Scene` and the debug overlay are lazily imported to keep three.js out of the
   first paint.
 
