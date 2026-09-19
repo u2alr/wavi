@@ -10,7 +10,6 @@ export const PRESET_TYPES = [
   'waveform',
   'acidWash',
   'mellow1',
-  'mellow2',
   'chromaticBurst',
 ]
 
@@ -25,6 +24,5 @@ export const PRESET_LABELS: Record<string, string> = {
   waveform: 'Waveform',
   acidWash: 'Acid Wash',
   mellow1: 'Mellow 1',
-  mellow2: 'Mellow 2',
   chromaticBurst: 'Chromatic Burst',
 }

@@ -5,7 +5,6 @@ import { startAnalysis, stopAnalysis } from '../analyser'
 import { usePauseWhenUnfocused } from '../windowFocus'
 import { countFrame } from '../frameStats'
 import { resolveDpr, useRenderScale } from '../renderScale'
-import Mellow2Preset from './presets/Mellow2Preset'
 import Mellow1Preset from './presets/Mellow1Preset'
 import PrismaticTempestPreset from './presets/PrismaticTempestPreset'
 import SandsOfTimePreset from './presets/SandsOfTimePreset'
@@ -38,8 +37,6 @@ function ActivePreset() {
       return <ChromaticBurstPreset />
     case 'mellow1':
       return <Mellow1Preset />
-    case 'mellow2':
-      return <Mellow2Preset />
     case 'prismaticTempest':
       return <PrismaticTempestPreset />
     case 'sandsOfTime':

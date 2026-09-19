@@ -6,9 +6,9 @@ import { readFrameRate } from './frameStats'
  *
  * Every preset is one full-screen fragment shader, so a frame costs
  * pixels × shader cost. Measured on a software rasteriser, at one canvas size and
- * with nothing varying but the drawing buffer: mellow2 draws 16 fps at full
- * resolution and 32–35 fps at this module's 0.6 floor, i.e. 2.1x for 36% of the
- * pixels, and the frame rate tracks the pixel count closely. So the one lever
+ * with nothing varying but the drawing buffer: a five-octave fbm preset drew
+ * 16 fps at full resolution and 32–35 fps at this module's 0.6 floor, i.e. 2.1x
+ * for 36% of the pixels, and the frame rate tracks the pixel count closely. So the one lever
  * that cuts GPU cost on a machine like that, without changing the look, is
  * drawing fewer pixels. That is all this does.
  *

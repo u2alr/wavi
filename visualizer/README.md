@@ -254,9 +254,9 @@ resource load is reported and not failed — it says what this network looked li
 not whether the preset is broken.
 
 The mount check alone is not enough, and the sweep would pass while rendering the
-same preset twelve times, so each run is confirmed against the Presets menu,
+same preset over and over, so each run is confirmed against the Presets menu,
 which marks the current id with `.checked`. That is the anti-vacuity control: if
-no deep link can be confirmed, the run fails rather than reporting twelve clean
+no deep link can be confirmed, the run fails rather than reporting a run of clean
 mounts it cannot attribute. Each preset is also fed the same fixed synthetic
 spectrum, posted the way the browser extension posts it, because `amPreset`,
 `am2Preset`, `waveform` and `chromaticBurst` draw nothing at all without a signal
@@ -279,7 +279,7 @@ The guards have been checked against themselves the same way: a deliberate
 GLSL type error in one preset's fragment shader exits 1 quoting three's
 `THREE.WebGLProgram: Shader Error` and the failing line, while the next preset in
 the same run still passes; and with the `#p=` handling disabled the run exits 1
-saying the menu marks `mellow2` where the URL asked for `amPreset` — the failure
+saying the menu marks `mellow1` where the URL asked for `amPreset` — the failure
 the control exists to produce.
 
 ## Known limitations

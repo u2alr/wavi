@@ -17,7 +17,6 @@ export type PresetParamKey = keyof PresetParams
 // Which sliders actually do something, per preset (read from the shader
 // uniform writes in Scene.tsx — anything not listed here stays hidden).
 export const PRESET_PARAM_KEYS: Record<string, PresetParamKey[]> = {
-  mellow2: ['intensity', 'sensitivity', 'hueShift', 'speed', 'complexity'],
   mellow1: ['intensity', 'sensitivity', 'hueShift', 'speed', 'complexity'],
   prismaticTempest: ['intensity', 'sensitivity', 'hueShift', 'speed', 'complexity'],
   sandsOfTime: ['intensity', 'sensitivity', 'hueShift', 'speed', 'complexity'],
@@ -38,15 +37,17 @@ export const PRESET_ID_RENAMES: Record<string, string> = {
   fractalEmber: 'waveform',
   laserSilk: 'acidWash',
   liquidDrift: 'mellow1',
-  mellowDrift: 'mellow2',
+  mellowDrift: 'mellow1',
   sonarBloom: 'chromaticBurst',
-  touchRadial: 'mellow2',
-  lightDome: 'mellow2',
-  am3Preset: 'mellow2',
+  // These three used to land on mellow2. It is gone, and mellow1 is the preset
+  // they were renamed to be nearest to, so an old link still opens something.
+  touchRadial: 'mellow1',
+  lightDome: 'mellow1',
+  am3Preset: 'mellow1',
 }
 
 // Preset ids that no longer exist. Anything referencing these is dropped.
-export const REMOVED_PRESETS = new Set(['prismaticGarden', 'auroraSilk'])
+export const REMOVED_PRESETS = new Set(['prismaticGarden', 'auroraSilk', 'mellow2'])
 
 /** The audio-bridge extension's reported state. */
 export type ExtensionStatus = '' | 'EXT LIVE' | 'EXT SILENT' | 'EXT READY' | 'EXT ERROR'
@@ -281,7 +282,7 @@ export function hasStoredPanelPref(): boolean {
 }
 
 export const useStore = create<Store>((set, get) => ({
-  currentPreset: 'mellow2',
+  currentPreset: 'mellow1',
   presetParams: {},
   playlist: [],
   currentTrackIndex: -1,

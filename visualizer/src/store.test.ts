@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { hasStoredPanelPref, presetParamsFor, resolvePresetId, type PresetParams } from './store'
+import {
+  hasStoredPanelPref,
+  presetParamsFor,
+  PRESET_ID_RENAMES,
+  resolvePresetId,
+  type PresetParams,
+} from './store'
 
 describe('hasStoredPanelPref', () => {
   const store = new Map<string, string>()
@@ -39,17 +45,27 @@ describe('hasStoredPanelPref', () => {
 
 describe('resolvePresetId', () => {
   it('leaves current ids alone', () => {
-    expect(resolvePresetId('mellow2')).toBe('mellow2')
+    expect(resolvePresetId('mellow1')).toBe('mellow1')
     expect(resolvePresetId('brat')).toBe('brat')
   })
 
   it('maps ids from before the rename pass', () => {
     expect(resolvePresetId('arcticSwirl')).toBe('prismaticTempest')
-    expect(resolvePresetId('am3Preset')).toBe('mellow2')
+    expect(resolvePresetId('am3Preset')).toBe('mellow1')
   })
 
-  it('resolves unknown ids to an empty string', () => {
+  it('resolves ids of presets that no longer exist to an empty string', () => {
     expect(resolvePresetId('prismaticGarden')).toBe('')
+    expect(resolvePresetId('auroraSilk')).toBe('')
+    expect(resolvePresetId('mellow2')).toBe('')
+  })
+
+  // A rename whose target is itself removed would otherwise hand back an id the
+  // scene cannot render, so the alias table has to point at live presets.
+  it('every rename target is a preset that still exists', () => {
+    for (const [from, to] of Object.entries(PRESET_ID_RENAMES)) {
+      expect(resolvePresetId(to), `${from} -> ${to}`).toBe(to)
+    }
   })
 })
 

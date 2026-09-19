@@ -1,7 +1,8 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 import { useStore } from '../store'
 
-const SAFE_PRESET = 'mellow2'
+// The same preset the app opens on, so a reset lands where a fresh load would.
+const SAFE_PRESET = 'mellow1'
 
 interface State {
   error: Error | null
