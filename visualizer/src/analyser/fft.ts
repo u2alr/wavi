@@ -1,4 +1,3 @@
-export const BASE_BINS = 256
 export const TAP_SIZE = 2048
 export const HIGH_BINS = TAP_SIZE / 2
 export const WAVE_SAMPLES = TAP_SIZE
@@ -14,10 +13,6 @@ export const byteToLinear: Float32Array = (() => {
   }
   return t
 })()
-
-export function dbToLinear(db: number): number {
-  return db <= -100 ? 0 : Math.pow(10, db / 20)
-}
 
 /** Frequency (Hz) of a bin for an FFT of `binCount` bins at `sampleRate`. */
 export function binToFrequency(bin: number, binCount: number, sampleRate: number): number {

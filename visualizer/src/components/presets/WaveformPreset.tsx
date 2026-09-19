@@ -2,8 +2,7 @@ import { useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useStore, presetParamsFor } from '../../store'
-import { getFreqData } from '../../audio'
-import { readBands } from './bands'
+import { getFreqData, readBands } from '../../audio'
 import { useWaveTrace } from './useWaveTrace'
 
 export default function WaveformPreset() {

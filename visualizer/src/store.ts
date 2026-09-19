@@ -48,6 +48,9 @@ export const PRESET_ID_RENAMES: Record<string, string> = {
 // Preset ids that no longer exist. Anything referencing these is dropped.
 export const REMOVED_PRESETS = new Set(['prismaticGarden', 'auroraSilk'])
 
+/** The audio-bridge extension's reported state. */
+export type ExtensionStatus = '' | 'EXT LIVE' | 'EXT SILENT' | 'EXT READY' | 'EXT ERROR'
+
 /** Resolve a possibly-legacy preset id to its current id ('' if removed). */
 export function resolvePresetId(id: string): string {
   if (REMOVED_PRESETS.has(id)) return ''
@@ -98,7 +101,7 @@ interface Store {
   bratWhiteBg: boolean
   bratKaraoke: boolean
   amFlip: boolean
-  extensionStatus: '' | 'EXT LIVE' | 'EXT SILENT' | 'EXT READY' | 'EXT ERROR'
+  extensionStatus: ExtensionStatus
   /** Render FPS cap (0 = unlimited). Persisted; defaults to 120. */
   fpsLimit: number
   /**
@@ -140,7 +143,7 @@ interface Store {
   setBratWhiteBg: (b: boolean) => void
   setBratKaraoke: (b: boolean) => void
   setAmFlip: (b: boolean) => void
-  setExtensionStatus: (s: '' | 'EXT LIVE' | 'EXT SILENT' | 'EXT READY' | 'EXT ERROR') => void
+  setExtensionStatus: (s: ExtensionStatus) => void
   setFpsLimit: (fps: number) => void
   setPauseWhenUnfocused: (b: boolean) => void
   setRepeatMode: (m: 'off' | 'all' | 'one') => void
@@ -160,12 +163,32 @@ const DEFAULT_PARAMS: PresetParams = {
   complexity: 1,
 }
 
-/** Effective params for a preset: defaults + that preset's overrides. */
+// Cache for presetParamsFor below, declared before it so a call can never land
+// on an uninitialized binding.
+let cachedOverrides: Partial<PresetParams> | undefined
+let cachedPresetId = ''
+let cachedParams: PresetParams = { ...DEFAULT_PARAMS }
+
+/**
+ * Effective params for a preset: defaults + that preset's overrides.
+ *
+ * Memoized on the overrides object's identity. Every preset reads this once per
+ * rendered frame, and the merge allocates; the store only ever replaces that
+ * object on an actual change (see setParam/setParams/resetParams), so identity
+ * is a sound cache key and the frame path stays allocation-free. Callers must
+ * treat the result as read-only — copy it if you intend to keep or mutate it.
+ */
 export function presetParamsFor(
   s: { currentPreset: string; presetParams: Record<string, Partial<PresetParams>> },
   id = s.currentPreset,
 ): PresetParams {
-  return { ...DEFAULT_PARAMS, ...s.presetParams[id] }
+  const overrides = s.presetParams[id]
+  if (overrides !== cachedOverrides || id !== cachedPresetId) {
+    cachedOverrides = overrides
+    cachedPresetId = id
+    cachedParams = { ...DEFAULT_PARAMS, ...overrides }
+  }
+  return cachedParams
 }
 
 function loadSavedPresets(): SavedPreset[] {
@@ -283,7 +306,7 @@ export const useStore = create<Store>((set, get) => ({
   bratWhiteBg: initialPrefs.bratWhiteBg,
   bratKaraoke: initialPrefs.bratKaraoke,
   amFlip: initialPrefs.amFlip,
-  extensionStatus: '' as '' | 'EXT LIVE' | 'EXT SILENT' | 'EXT READY' | 'EXT ERROR',
+  extensionStatus: '' as ExtensionStatus,
   fpsLimit: initialPrefs.fpsLimit,
   pauseWhenUnfocused: initialPrefs.pauseWhenUnfocused,
   repeatMode: 'off' as 'off' | 'all' | 'one',

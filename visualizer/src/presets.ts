@@ -28,8 +28,3 @@ export const PRESET_LABELS: Record<string, string> = {
   mellow2: 'Mellow 2',
   chromaticBurst: 'Chromatic Burst',
 }
-
-export const PRESET_OPTIONS = PRESET_TYPES.map((value) => ({
-  value,
-  label: PRESET_LABELS[value] ?? value,
-}))

@@ -2,8 +2,7 @@ import { useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useStore, presetParamsFor } from '../../store'
-import { getFreqData } from '../../audio'
-import { readBands } from './bands'
+import { getFreqData, readBands } from '../../audio'
 import { useWaveTrace } from './useWaveTrace'
 import { AM_TUNE } from './amTune'
 
@@ -91,18 +90,12 @@ export default function AMPreset() {
 
     refresh(AM_TUNE.follow) // raw time-domain trace → texture
 
+    // Only the values that can change per frame are written: the AM_TUNE
+    // constants above are already in place from the initial uniforms object.
     const u = materialRef.current.uniforms
     u.uTime.value = state.clock.elapsedTime * speed
     u.uBass.value = Math.min(b.bass * sensitivity, 1.0)
     u.uAspect.value = viewport.width / viewport.height
-    u.uAmpQuiet.value = AM_TUNE.ampQuiet
-    u.uAmpEnergy.value = AM_TUNE.ampEnergy
-    u.uGain.value = AM_TUNE.gain
-    u.uThickMin.value = AM_TUNE.thickMin
-    u.uThickEnergy.value = AM_TUNE.thickEnergy
-    u.uSpacing.value = AM_TUNE.spacing
-    u.uSoft.value = AM_TUNE.soft
-    u.uMirror.value = AM_TUNE.mirror ? 1 : 0
     u.uFlip.value = useStore.getState().amFlip ? 1 : 0
   })
 

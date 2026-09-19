@@ -39,7 +39,6 @@ import AmbientLyrics from './components/AmbientLyrics'
 import StatusBar from './components/StatusBar'
 import ExtensionBadge from './components/ExtensionBadge'
 import SavedLooksSection from './components/SavedLooksMenu'
-import { setAnalysisDebug } from './analyser'
 import { readFrameRate } from './frameStats'
 
 // Canonical order also drives the A/D keyboard cycle.
@@ -95,9 +94,6 @@ export default function App() {
   const [showAnalysisDebug, setShowAnalysisDebug] = useState(
     () => new URLSearchParams(window.location.search).has('analysis-debug'),
   )
-  useEffect(() => {
-    setAnalysisDebug(showAnalysisDebug)
-  }, [showAnalysisDebug])
   const extensionStatus = useStore((s) => s.extensionStatus)
   const setExtensionStatus = useStore((s) => s.setExtensionStatus)
   const fpsLimit = useStore((s) => s.fpsLimit)
@@ -496,7 +492,7 @@ export default function App() {
       setPanelCollapsed(true)
       if (!fsToastShownRef.current) {
         fsToastShownRef.current = true
-        showMenuToast('Fullscreen — press H for controls')
+        showMenuToast('Fullscreen — press Tab or H for controls')
       }
     } else if (preFsPanelRef.current === false) {
       setPanelCollapsed(false)
@@ -558,9 +554,12 @@ export default function App() {
         event.preventDefault()
         const currentVol = useStore.getState().volume
         setVolume(currentVol > 0 ? 0 : 1.0)
-      } else if (key === 'h') {
-        // Deliberately no Tab binding: it is the only key that moves focus
-        // between controls, so hijacking it makes the app keyboard-hostile.
+      } else if (key === 'h' || key === 'tab') {
+        // Tab and H both toggle the panel, unconditionally — the early return
+        // above is what keeps Tab out of text fields, and nothing else about a
+        // focused control stops it. The trade is deliberate: this costs Tab its
+        // role as the key that walks the focus ring, so H is the binding that
+        // does not clash when the panel is being driven by keyboard.
         event.preventDefault()
         togglePanelCollapsed()
       } else if (key === 'y') {
@@ -701,7 +700,7 @@ export default function App() {
                       }}
                     >
                       <span>Toggle Controls Sidebar</span>
-                      <span className="shortcut-hint">H</span>
+                      <span className="shortcut-hint">Tab / H</span>
                     </div>
                     <div
                       className="dropdown-item"

@@ -94,30 +94,42 @@ export default function SpotifyPanel() {
     }
   }
 
-  const playTrack = async (i: number) => {
-    const list = useStore.getState().spotifyTracks
-    if (i < 0 || i >= list.length) return
-    clearError()
-    setPendingTrack(list[i].id)
+  /**
+   * Start `list` at `offset`: the store is moved optimistically first so the
+   * panel never lags behind the click, then the SDK device is aimed at the
+   * queue and the request goes out. Shared by the playlist list and the search
+   * results — both used to carry their own copy of this sequence.
+   */
+  const startQueuePlayback = async (list: typeof tracks, offset: number) => {
+    const track = list[offset]
+    setPendingTrack(track.id)
+    setIndex(offset)
+    setCurrentTrack(track)
+    setTrackName(track.name)
+    setPlaying(true)
+    // Guard against stale SDK events immediately, before any async work.
+    setPendingTrackId(track.id)
     try {
-      setIndex(i)
-      setCurrentTrack(list[i])
-      setTrackName(list[i].name)
-      setPlaying(true)
-      // Guard against stale SDK events immediately, before any async work.
-      setPendingTrackId(list[i].id)
-
       const deviceId = await ensureSpotifyPlayer()
       await transferPlaybackToDevice(deviceId)
       // Repeat/shuffle live on the Spotify player, so re-apply them on the
       // device we're about to play on.
       applySpotifyTransportModes(deviceId)
-      await playTracks(list.map((t) => t.uri), i, deviceId)
+      await playTracks(list.map((t) => t.uri), offset, deviceId)
+    } finally {
+      setPendingTrack((cur) => (cur === track.id ? null : cur))
+    }
+  }
+
+  const playTrack = async (i: number) => {
+    const list = useStore.getState().spotifyTracks
+    if (i < 0 || i >= list.length) return
+    clearError()
+    try {
+      await startQueuePlayback(list, i)
     } catch (err) {
       setPendingTrackId(null)
       fail(err, () => playTrack(i).catch(() => {}))
-    } finally {
-      setPendingTrack((cur) => (cur === list[i].id ? null : cur))
     }
   }
 
@@ -176,28 +188,15 @@ export default function SpotifyPanel() {
 
   const playSearchResult = async (track: typeof tracks[number]) => {
     clearError()
-    setPendingTrack(track.id)
+    // The queue is now this single track, not the playlist — clear the
+    // selection so the dropdown stops claiming a playlist it isn't showing.
+    setSelectedPlaylistId('')
+    setTracks([track])
     try {
-      // The queue is now this single track, not the playlist — clear the
-      // selection so the dropdown stops claiming a playlist it isn't showing.
-      setSelectedPlaylistId('')
-      setTracks([track])
-      setCurrentTrack(track)
-      setTrackName(track.name)
-      setIndex(0)
-      setPlaying(true)
-      setPendingTrackId(track.id)
-      const deviceId = await ensureSpotifyPlayer()
-      await transferPlaybackToDevice(deviceId)
-      // Repeat/shuffle live on the Spotify player, so re-apply them on the
-      // device we're about to play on.
-      applySpotifyTransportModes(deviceId)
-      await playTracks([track.uri], 0, deviceId)
+      await startQueuePlayback([track], 0)
     } catch (err) {
       setPendingTrackId(null)
       fail(err, () => playSearchResult(track).catch(() => {}))
-    } finally {
-      setPendingTrack((cur) => (cur === track.id ? null : cur))
     }
   }
 

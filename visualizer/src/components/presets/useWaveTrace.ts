@@ -8,7 +8,7 @@ import { getEmberWaveAnalyser, teardownEmberWaveAnalyser } from '../../emberAnal
 export const WAVE_SIZE = 2048
 
 /**
- * Shared waveform source for the time-domain presets (Fractal Ember, AM Preset).
+ * Shared waveform source for the time-domain presets (Waveform, AM, AM2).
  * Owns the 2048-sample buffer + DataTexture, refills it each frame from the
  * extension tab-capture (when live) or the dedicated local AnalyserNode tap,
  * and releases the tap + texture on unmount.

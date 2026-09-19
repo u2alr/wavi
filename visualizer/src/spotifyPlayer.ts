@@ -240,16 +240,6 @@ export async function transferPlaybackToDevice(deviceId: string): Promise<void> 
   await new Promise((resolve) => setTimeout(resolve, 350))
 }
 
-/** Start playing a playlist/album/artist by its context URI. */
-export async function playContext(contextUri: string, deviceId = getSpotifyDeviceId()): Promise<void> {
-  const suffix = deviceId ? `?device_id=${encodeURIComponent(deviceId)}` : ''
-  await spotifyApi<void>(`/me/player/play${suffix}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ context_uri: contextUri }),
-  })
-}
-
 /**
  * How long a selection waits before it is sent, so a burst of clicks becomes one
  * request instead of one per click.

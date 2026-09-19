@@ -19,7 +19,6 @@ export default function ChromaticBurstPreset() {
       uPushStrength: { value: 0.8 },
       uWaveSpeed: { value: 1.8 },
       uTaper: { value: 0.1 },
-      uCoreSize: { value: 16.0 },
       uRotationSpeed: { value: 0.2 },
       uZoom: { value: 2.0 },           // 1.0 = normal, 2.0 = zoomed in 2x
       uVocal: { value: 0 },
@@ -27,7 +26,7 @@ export default function ChromaticBurstPreset() {
     vertexShader: 'varying vec2 vUv; void main(){vUv=uv;gl_Position=projectionMatrix * modelViewMatrix * vec4(position,1.0);}',
     fragmentShader: `
       varying vec2 vUv;
-      uniform float uTime,uBands[7],uHueShift,uIntensity,uAspect,uLineCount,uPushStrength,uWaveSpeed,uTaper,uCoreSize,uRotationSpeed,uZoom,uVocal;
+      uniform float uTime,uBands[7],uHueShift,uIntensity,uAspect,uLineCount,uPushStrength,uWaveSpeed,uTaper,uRotationSpeed,uZoom,uVocal;
 
       vec3 hsv(vec3 c){vec4 k=vec4(1.,.666666,.333333,3.);vec3 p=abs(fract(c.xxx+k.xyz)*6.-k.www);return c.z*mix(k.xxx,clamp(p-k.xxx,0.,1.),c.y);}
       float hash(vec2 p){vec3 p3=fract(vec3(p.xyx)*.1031);p3+=dot(p3,p3.yzx+33.33);return fract((p3.x+p3.y)*p3.z);}

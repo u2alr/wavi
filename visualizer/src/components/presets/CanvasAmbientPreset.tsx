@@ -2,8 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useStore, presetParamsFor } from '../../store'
-import { getFreqData } from '../../audio'
-import { readBands } from './bands'
+import { getFreqData, readBands } from '../../audio'
 
 function useCanvasSource() {
   const spotifyCurrentTrack = useStore((s) => s.spotifyCurrentTrack)
@@ -17,6 +16,10 @@ function useCanvasSource() {
     let dead = false
     let dispose: (() => void) | null = null
 
+    // A track switched while a source is still loading has to release what it
+    // just built: the effect's cleanup has already run by then, so nothing else
+    // would ever dispose it (the video keeps decoding, the texture keeps its
+    // GPU copy).
     const makeVideo = (url: string, aspect: number) => {
       const video = document.createElement('video')
       video.src = url
@@ -27,16 +30,18 @@ function useCanvasSource() {
       video.play().catch(() => {})
       const tex = new THREE.VideoTexture(video)
       tex.colorSpace = THREE.SRGBColorSpace
-      if (!dead) {
-        setSource({ tex, aspect })
-        dispose = () => { video.pause(); video.removeAttribute('src'); tex.dispose() }
-      }
+      const release = () => { video.pause(); video.removeAttribute('src'); tex.dispose() }
+      if (dead) { release(); return }
+      setSource({ tex, aspect })
+      dispose = release
     }
 
     const makeImage = (url: string) => {
       new THREE.TextureLoader().load(url, (tex) => {
         tex.colorSpace = THREE.SRGBColorSpace
-        if (!dead) { setSource({ tex, aspect: 1 }); dispose = () => tex.dispose() }
+        if (dead) { tex.dispose(); return }
+        setSource({ tex, aspect: 1 })
+        dispose = () => tex.dispose()
       })
     }
 

@@ -1,6 +1,5 @@
 import { useState } from 'react'
-
-type ExtensionStatus = '' | 'EXT LIVE' | 'EXT SILENT' | 'EXT READY' | 'EXT ERROR'
+import type { ExtensionStatus } from '../store'
 
 /**
  * Extension install/usage guard.

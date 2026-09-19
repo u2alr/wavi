@@ -10,6 +10,9 @@ let audioElement: HTMLAudioElement | null = null
 let audioObjectUrl: string | null = null
 let desiredVolume = 1
 const freqData = new Uint8Array(256)
+// Default sink for readBands below — written and read on the spot by callers
+// that don't keep a scratch object of their own.
+const bandScratch = { bass: 0, mid: 0, treble: 0 }
 // Frame-stamp cache: only call getByteFrequencyData once per animation frame
 let lastFillTime = -1
 let extensionFreqData: Uint8Array | null = null
@@ -87,27 +90,33 @@ function fillFreqData() {
 }
 
 export function getAudioBands() {
-  if (extensionFreqData) freqData.set(extensionFreqData)
-  else if (!analyser) {
-    return { bass: 0, mid: 0, treble: 0, overall: 0 }
-  } else {
-    fillFreqData()
-  }
+  if (!extensionFreqData && !analyser) return { bass: 0, mid: 0, treble: 0, overall: 0 }
 
-  let bass = 0, mid = 0, treble = 0
-  const len = freqData.length
-  const bassEnd = Math.floor(len * 0.1)
-  const midEnd = Math.floor(len * 0.4)
-
-  for (let i = 0; i < bassEnd; i++) bass += freqData[i]
-  for (let i = bassEnd; i < midEnd; i++) mid += freqData[i]
-  for (let i = midEnd; i < len; i++) treble += freqData[i]
-
-  bass /= bassEnd * 255
-  mid /= (midEnd - bassEnd) * 255
-  treble /= (len - midEnd) * 255
+  const { bass, mid, treble } = readBands(getFreqData())
 
   return { bass, mid, treble, overall: (bass + mid + treble) / 3 }
+}
+
+/**
+ * Bass/mid/treble split of the raw frequency bytes — one implementation for
+ * every consumer (the status-bar meters here, and each three-band preset).
+ * Writes into `out` so a per-frame caller allocates nothing; pass your own
+ * object when the values have to survive the next call.
+ */
+export function readBands(frequency: Uint8Array, out = bandScratch) {
+  let bass = 0, mid = 0, treble = 0
+  const bassEnd = Math.floor(frequency.length * 0.1)
+  const midEnd = Math.floor(frequency.length * 0.4)
+
+  for (let i = 0; i < bassEnd; i++) bass += frequency[i]
+  for (let i = bassEnd; i < midEnd; i++) mid += frequency[i]
+  for (let i = midEnd; i < frequency.length; i++) treble += frequency[i]
+
+  out.bass = bass / (bassEnd * 255)
+  out.mid = mid / ((midEnd - bassEnd) * 255)
+  out.treble = treble / ((frequency.length - midEnd) * 255)
+
+  return out
 }
 
 export function getFreqData(): Uint8Array {
@@ -125,10 +134,6 @@ export function getFreqData(): Uint8Array {
 
 export function getAudioElement() {
   return audioElement
-}
-
-export function hasExtensionAudio(): boolean {
-  return extensionFreqData !== null
 }
 
 export function getExtensionWaveData(): Uint8Array | null {

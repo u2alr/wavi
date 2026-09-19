@@ -6,11 +6,13 @@
  * engine rather than to a stale sibling module. Presets should import from
  * here, never from `./analyser/...` internals.
  *
- * Importing this module starts the engine's own rAF loop
- * (`startAnalysis()` runs at module scope in `./analyser/index`).
+ * Importing this module starts the engine's own rAF loop — `startAnalysis()`
+ * runs at module scope below, independently of React.
  */
 import { BAND_COUNT } from './analyser/fft'
-import type { AudioAnalysis } from './analyser/types'
+import { startAnalysis } from './analyser/engine'
+import { getStemProvider, setStemProvider } from './analyser/stems'
+import type { AudioAnalysis, StemProvider } from './analyser/types'
 
 export {
   getAnalysis,
@@ -22,13 +24,7 @@ export {
   getBandTexture,
   getFeatureTexture,
 } from './analyser/textures'
-export {
-  getAnalysisSnapshot,
-  isAnalysisDebug,
-  setAnalysisDebug,
-} from './analyser/debug'
-export { getStemProvider } from './analyser/stems'
-export { configureAnalysis } from './analyser/index'
+export { getStemProvider }
 
 export type {
   AudioAnalysis,
@@ -38,6 +34,15 @@ export type {
   SectionState,
   StemProvider,
 } from './analyser/types'
+
+/**
+ * Register a source-separation backend (e.g. Demucs/MDX). When set, vocal and
+ * percussive estimators use the supplied stem energies instead of heuristics.
+ * Presets never need to change.
+ */
+export function configureAnalysis(opts: { stemProvider?: StemProvider | null }): void {
+  if ('stemProvider' in opts) setStemProvider(opts.stemProvider ?? null)
+}
 
 /** Number of visual bands contour-style presets consume. */
 export const VISUAL_BAND_COUNT = 7
@@ -70,3 +75,6 @@ export function readVisualBands(analysis: AudioAnalysis, out: number[]): number[
   }
   return out
 }
+
+// Independent of React: the engine owns its own rAF loop and idle-skips.
+startAnalysis()

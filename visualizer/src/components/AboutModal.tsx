@@ -56,7 +56,7 @@ export default function AboutModal() {
               <span>Cycle Presets</span>
             </div>
             <div className="shortcut-item">
-              <kbd className="key-badge">H</kbd>
+              <kbd className="key-badge">Tab</kbd> / <kbd className="key-badge">H</kbd>
               <span>Toggle Controls Sidebar</span>
             </div>
             <div className="shortcut-item">

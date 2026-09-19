@@ -1,6 +1,5 @@
 import ExtensionPanel from './ExtensionPanel'
-
-type ExtensionStatus = '' | 'EXT LIVE' | 'EXT SILENT' | 'EXT READY' | 'EXT ERROR'
+import type { ExtensionStatus } from '../store'
 
 /**
  * Compact extension status pill pinned to the right end of the menu bar.

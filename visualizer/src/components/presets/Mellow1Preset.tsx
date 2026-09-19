@@ -2,8 +2,7 @@ import { useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useStore, presetParamsFor } from '../../store'
-import { getFreqData } from '../../audio'
-import { readBands } from './bands'
+import { getFreqData, readBands } from '../../audio'
 
 export default function Mellow1Preset() {
   const materialRef = useRef<THREE.ShaderMaterial>(null!)
