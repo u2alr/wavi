@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b",
     "test": "vitest run",
-    "check:viewport": "node scripts/viewport-probe.mjs",
+    "check:csp": "node scripts/check-csp.mjs",
+    "check:presets": "node scripts/check-presets.mjs",
     "lint": "oxlint --deny-warnings",
     "preview": "vite preview"
   },

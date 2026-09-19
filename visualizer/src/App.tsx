@@ -40,6 +40,7 @@ import StatusBar from './components/StatusBar'
 import ExtensionBadge from './components/ExtensionBadge'
 import SavedLooksSection from './components/SavedLooksMenu'
 import { setAnalysisDebug } from './analyser'
+import { readFrameRate } from './frameStats'
 
 // Canonical order also drives the A/D keyboard cycle.
 
@@ -101,6 +102,8 @@ export default function App() {
   const setExtensionStatus = useStore((s) => s.setExtensionStatus)
   const fpsLimit = useStore((s) => s.fpsLimit)
   const setFpsLimit = useStore((s) => s.setFpsLimit)
+  const pauseWhenUnfocused = useStore((s) => s.pauseWhenUnfocused)
+  const setPauseWhenUnfocused = useStore((s) => s.setPauseWhenUnfocused)
   const [menuToast, setMenuToast] = useState<{ text: string; error?: boolean; key: number } | null>(null)
   const menuToastTimer = useRef(0)
 
@@ -268,19 +271,19 @@ export default function App() {
     return () => window.removeEventListener('message', receiveExtensionAudio)
   }, [setExtensionStatus])
 
-  // Audio metrics sampling loop
+  // Audio metrics sampling loop. The frame rate is *not* measured here: this
+  // loop's requestAnimationFrame ticks at the display's refresh rate whether or
+  // not the scene drew anything, so counting it here read as 60 forever and made
+  // the FPS cap look inert. The scene reports its own drawn frames instead
+  // (frameStats.ts); this loop reads that number back.
   useEffect(() => {
     let frameId = 0
-    let frameCount = 0
     let lastUpdate = performance.now()
 
     const sample = (time: number) => {
-      frameCount += 1
       if (time - lastUpdate >= 250) {
-        const fps = (frameCount * 1000) / (time - lastUpdate)
         const bands = getAudioBands()
-        setMetrics({ fps, ...bands, sourceMode: getAudioSourceMode() })
-        frameCount = 0
+        setMetrics({ fps: readFrameRate(), ...bands, sourceMode: getAudioSourceMode() })
         lastUpdate = time
       }
       frameId = requestAnimationFrame(sample)
@@ -850,6 +853,13 @@ export default function App() {
                         <span>{fps === 0 ? 'Unlimited' : `${fps} FPS`}</span>
                       </div>
                     ))}
+                    <div className="dropdown-divider" />
+                    <div
+                      className={`dropdown-item ${pauseWhenUnfocused ? 'checked' : ''}`}
+                      onClick={() => setPauseWhenUnfocused(!pauseWhenUnfocused)}
+                    >
+                      <span>Pause When Unfocused</span>
+                    </div>
                     <div className="dropdown-divider" />
                     <div
                       className="dropdown-item"

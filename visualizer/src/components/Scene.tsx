@@ -1,8 +1,10 @@
 import { useEffect } from 'react'
-import { Canvas, useThree } from '@react-three/fiber'
+import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { useStore } from '../store'
+import { startAnalysis, stopAnalysis } from '../analyser'
+import { usePauseWhenUnfocused } from '../windowFocus'
+import { countFrame } from '../frameStats'
 import Mellow2Preset from './presets/Mellow2Preset'
-import AuroraSilkPreset from './presets/AuroraSilkPreset'
 import Mellow1Preset from './presets/Mellow1Preset'
 import PrismaticTempestPreset from './presets/PrismaticTempestPreset'
 import SandsOfTimePreset from './presets/SandsOfTimePreset'
@@ -25,8 +27,6 @@ function ActivePreset() {
       return <AMPreset />
     case 'am2Preset':
       return <AM2Preset />
-    case 'auroraSilk':
-      return <AuroraSilkPreset />
     case 'brat':
       return null
     case 'canvasAmbient':
@@ -66,16 +66,68 @@ function FpsGate({ limit }: { limit: number }) {
   return null
 }
 
+/**
+ * Reports the rate the scene is actually drawing at, for the status bar.
+ *
+ * `useFrame` fires per rendered frame, which is exactly the number wanted and
+ * is not what a requestAnimationFrame loop outside the canvas measures — in
+ * 'demand' mode this runs on the invalidated frames only, so the cap shows up
+ * here. See frameStats.ts.
+ */
+function FrameMeter() {
+  useFrame(() => countFrame())
+  return null
+}
+
+/**
+ * One frame as soon as the renderer is un-parked.
+ *
+ * Only a capped loop needs this: it runs on 'demand', where nothing is drawn
+ * until something asks, and its gate is an interval that can be a full second
+ * long. Without this the user would return to a canvas holding the frame from
+ * before the pause for up to that long.
+ */
+function ResumeFrame({ paused }: { paused: boolean }) {
+  const invalidate = useThree((s) => s.invalidate)
+  useEffect(() => {
+    if (!paused) invalidate()
+  }, [paused, invalidate])
+  return null
+}
+
 export default function Scene() {
   const fpsLimit = useStore((s) => s.fpsLimit)
+  const pauseWhenUnfocused = useStore((s) => s.pauseWhenUnfocused)
+  const unfocused = usePauseWhenUnfocused()
+  // Both hooks above are always called; only their combination is conditional,
+  // which is what hooks require.
+  const paused = pauseWhenUnfocused && unfocused
+
+  // Playback is untouched by any of this: the local player is an <audio> element
+  // behind the Web Audio graph and Spotify's runs in the SDK's own iframe, so
+  // neither stops when the page stops asking for frames. The analysis pipeline
+  // is a different matter — it exists to feed the shaders, and it is the second
+  // half of what an unfocused window is spending, so it stops with the drawing.
+  useEffect(() => {
+    if (paused) stopAnalysis()
+    else startAnalysis()
+  }, [paused])
+
   return (
     <Canvas
       camera={{ position: [0, 0, 6], fov: 55 }}
       dpr={[1, 1.5]}
-      frameloop={fpsLimit > 0 ? 'demand' : 'always'}
+      // 'never' stops the drawing entirely — no useFrame subscribers, no shader
+      // uniform updates, no draw calls — while the canvas and its GL context
+      // stay alive, which is what makes the resume a frame instead of a remount.
+      // (R3F's own rAF chain keeps ticking empty under 'never'; the GPU work is
+      // the part that stops.)
+      frameloop={paused ? 'never' : fpsLimit > 0 ? 'demand' : 'always'}
       gl={{ antialias: false, powerPreference: 'high-performance', depth: false, stencil: false }}
     >
-      <FpsGate limit={fpsLimit} />
+      <FpsGate limit={paused ? 0 : fpsLimit} />
+      <ResumeFrame paused={paused} />
+      <FrameMeter />
       <color attach="background" args={['#020308']} />
       <ambientLight intensity={0.9} />
       <pointLight position={[3, 4, 5]} intensity={1.1} />

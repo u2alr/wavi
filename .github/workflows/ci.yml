@@ -23,61 +23,22 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
-
-  viewport:
-    # Layout gate. The stylesheets are imported in a load-bearing order, so a
-    # same-specificity rule in theme.css silently cancels a touch rule in
-    # responsive.css with no build error — only a real engine can say which one
-    # won. ubuntu-latest already ships Chrome, so nothing needs installing.
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: visualizer
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: visualizer/package-lock.json
-
-      - run: npm ci
       - run: npm run build
 
-      # The shipped Content-Security-Policy, checked before the sweep below
-      # because it takes seconds and a broken policy should not queue behind it.
-      # This is the only step that serves public/_headers — vite neither reads
-      # the header file nor sends it, so without this step a policy regression is
-      # invisible until production. Three assertions, from one page load: the
-      # served policy matches the file, loading the app under it produces no
-      # refusal, and a deliberately blocked image and fetch are still reported
-      # (the control — without it, "no violations" could just as well mean a
-      # detector that is not wired up).
+      # The shipped Content-Security-Policy. Nothing else can check it: vite
+      # neither reads public/_headers nor sends it, so the policy that lands in
+      # production is invisible to the dev server, to vite preview and to every
+      # unit test. This serves dist/ with the header file's rules applied, loads
+      # the app under the policy and fails on any refusal. ubuntu-latest ships
+      # Chrome, so nothing needs installing.
       - name: Check the shipped Content-Security-Policy
-        run: >-
-          npm run check:viewport --
-          --server pages
-          --sizes 390x844
-          --pointer touch
-          --presets none
+        run: npm run check:csp
 
-      # Probes the built bundle (not the dev server) so production CSS and
-      # chunking are what gets measured. Phone portrait + landscape, tablet and
-      # desktop, with both a touch and a mouse pointer. The same run also sweeps
-      # every preset id (--presets defaults to all), which is the only thing here
-      # that catches a shader that stopped compiling: three.js logs those to the
-      # console and keeps drawing a black frame instead of throwing. Each swept
-      # preset is then compared against its committed frame in
-      # visualizer/scripts/probe-baselines/ — this runner renders on SwiftShader
-      # while those were captured on a GPU, which is why the comparison is a grid
-      # of cell averages with a tolerance rather than a pixel diff, and why a
-      # renderer-sensitive preset would be reported as skipped rather than failed
-      # (that list is empty — see the probe's RENDERER_SENSITIVE for what was in
-      # it and why the shader was fixed instead).
-      - name: Probe viewports, presets and frames
-        run: >-
-          npm run check:viewport --
-          --server preview
-          --sizes 390x844,844x390,1024x768,1440x900
-          --pointer both
+      # Every preset mounts and draws without a console or GL error. A GLSL
+      # compile or link failure is why this needs a browser: three.js reports it
+      # with console.error and keeps drawing a black frame, so nothing throws and
+      # no other step here can see it. It compares no frames, so there is nothing
+      # to regenerate when a preset's look changes on purpose. ubuntu-latest has
+      # no GPU, which is the renderer a shader bug like this hides from.
+      - name: Smoke every preset
+        run: npm run check:presets

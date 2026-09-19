@@ -18,7 +18,6 @@ export type PresetParamKey = keyof PresetParams
 // uniform writes in Scene.tsx — anything not listed here stays hidden).
 export const PRESET_PARAM_KEYS: Record<string, PresetParamKey[]> = {
   mellow2: ['intensity', 'sensitivity', 'hueShift', 'speed', 'complexity'],
-  auroraSilk: ['intensity', 'sensitivity', 'hueShift', 'speed', 'complexity'],
   mellow1: ['intensity', 'sensitivity', 'hueShift', 'speed', 'complexity'],
   prismaticTempest: ['intensity', 'sensitivity', 'hueShift', 'speed', 'complexity'],
   sandsOfTime: ['intensity', 'sensitivity', 'hueShift', 'speed', 'complexity'],
@@ -47,7 +46,7 @@ export const PRESET_ID_RENAMES: Record<string, string> = {
 }
 
 // Preset ids that no longer exist. Anything referencing these is dropped.
-export const REMOVED_PRESETS = new Set(['prismaticGarden'])
+export const REMOVED_PRESETS = new Set(['prismaticGarden', 'auroraSilk'])
 
 /** Resolve a possibly-legacy preset id to its current id ('' if removed). */
 export function resolvePresetId(id: string): string {
@@ -100,8 +99,13 @@ interface Store {
   bratKaraoke: boolean
   amFlip: boolean
   extensionStatus: '' | 'EXT LIVE' | 'EXT SILENT' | 'EXT READY' | 'EXT ERROR'
-  /** Render FPS cap (0 = unlimited). Session-only. */
+  /** Render FPS cap (0 = unlimited). Persisted; defaults to 120. */
   fpsLimit: number
+  /**
+   * Stop drawing while this window is hidden or unfocused. Audio keeps playing
+   * either way — this only avoids rendering frames nobody is looking at.
+   */
+  pauseWhenUnfocused: boolean
   /** Local + Spotify transport modes. Session-only. */
   repeatMode: 'off' | 'all' | 'one'
   shuffle: boolean
@@ -138,6 +142,7 @@ interface Store {
   setAmFlip: (b: boolean) => void
   setExtensionStatus: (s: '' | 'EXT LIVE' | 'EXT SILENT' | 'EXT READY' | 'EXT ERROR') => void
   setFpsLimit: (fps: number) => void
+  setPauseWhenUnfocused: (b: boolean) => void
   setRepeatMode: (m: 'off' | 'all' | 'one') => void
   cycleRepeatMode: () => void
   setShuffle: (b: boolean) => void
@@ -192,6 +197,7 @@ interface UiPrefs {
   v: 1
   volume: number
   fpsLimit: number
+  pauseWhenUnfocused: boolean
   bratWhiteBg: boolean
   bratKaraoke: boolean
   amFlip: boolean
@@ -203,7 +209,12 @@ const UI_PREFS_KEY = 'viz-ui-prefs'
 const DEFAULT_UI_PREFS: UiPrefs = {
   v: 1,
   volume: 1.0,
-  fpsLimit: 0,
+  // 120, not 0 (Unlimited). Unlimited redraws the shaders as fast as the display
+  // will take them, which on a high-refresh panel is heat and battery for frames
+  // past the point anyone can see them; 120 is above every common panel on the
+  // laptop/desktop side. A 240Hz display can say so in Tools → Frame Rate.
+  fpsLimit: 120,
+  pauseWhenUnfocused: true,
   bratWhiteBg: false,
   bratKaraoke: false,
   amFlip: false,
@@ -274,6 +285,7 @@ export const useStore = create<Store>((set, get) => ({
   amFlip: initialPrefs.amFlip,
   extensionStatus: '' as '' | 'EXT LIVE' | 'EXT SILENT' | 'EXT READY' | 'EXT ERROR',
   fpsLimit: initialPrefs.fpsLimit,
+  pauseWhenUnfocused: initialPrefs.pauseWhenUnfocused,
   repeatMode: 'off' as 'off' | 'all' | 'one',
   shuffle: false,
 
@@ -337,6 +349,10 @@ export const useStore = create<Store>((set, get) => ({
   setFpsLimit: (fps) => {
     persistUiPrefs({ fpsLimit: fps })
     set({ fpsLimit: fps })
+  },
+  setPauseWhenUnfocused: (b) => {
+    persistUiPrefs({ pauseWhenUnfocused: b })
+    set({ pauseWhenUnfocused: b })
   },
   setRepeatMode: (m) => set({ repeatMode: m }),
   cycleRepeatMode: () =>

@@ -41,11 +41,12 @@ and the Spotify panel reports that it isn't configured.
 | `npm run typecheck` | Typecheck only. |
 | `npm test` | Vitest unit tests (pure logic — no DOM, no network). |
 | `npm run lint` | oxlint — fails on warnings too (`--deny-warnings`), see below. |
-| `npm run check:viewport` | Headless-Chrome layout probe across phone/tablet/desktop viewports, plus a shader sweep of every preset against committed reference frames. |
+| `npm run check:csp` | Serves `dist/` with `public/_headers` applied and fails on any Content-Security-Policy refusal (see Security). |
+| `npm run check:presets` | Mounts every preset in Chrome and fails on a console or GL error, a missing WebGL context, or a `#p=` link that did not apply (see Preset smoke pass). |
 | `npm run preview` | Serve the built bundle. |
 
-CI (`.github/workflows/ci.yml`) runs lint, typecheck and tests on every push and
-pull request, plus a separate `viewport` job for the layout probe below.
+CI (`.github/workflows/ci.yml`) runs lint, typecheck, tests and a build on every
+push and pull request, then the policy check below.
 
 ### Lint policy
 
@@ -60,161 +61,6 @@ uses (the before-paint height measurement in `AmbientLyrics`, the song-key blank
 in `BratLyrics`) carry an inline `oxlint-disable-next-line` with the reason at
 the site.
 
-## Responsive checks (`check:viewport`)
-
-The stylesheets are split into nine files whose `@import` order is load-bearing,
-so a same-specificity rule in `theme.css` silently cancels a touch rule in
-`responsive.css` — no build error, no visual diff, just a control that is 28px
-instead of 40px on a phone. `npm run check:viewport` exists to catch that:
-
-```bash
-npm run check:viewport                              # 6 default viewports, touch
-npm run check:viewport -- --sizes 320x568 --pointer mouse
-npm run check:viewport -- --url http://127.0.0.1:4173/   # probe vite preview
-npm run check:viewport -- --presets none            # layout checks only
-npm run check:viewport -- --presets mellow2 --software-gl   # render like CI
-```
-
-It starts vite if nothing is serving (and reuses your running dev server if it
-is), drives the installed Chrome over the DevTools protocol, loads two generated
-WAV fixtures so the player box actually exists, then reports per viewport:
-
-- **failures** — page-level horizontal scroll, elements escaping the viewport,
-  children spilling out of their container, off-screen regions, interactive
-  targets under 24px, an error-boundary fallback, or a missing/unusable panel
-  drawer handle below the 860px breakpoint. Exit code 1.
-- **info** — clipped labels and targets under the comfortable 44px.
-
-### Preset sweep (`--presets`, on by default)
-
-Every id in `src/presets.ts` is also rendered once and checked for a clean mount.
-This is the only automated check that catches a shader that stopped compiling:
-three.js reports a GLSL compile or link failure with `console.error` and then
-keeps drawing a black frame, so nothing throws, no error boundary fires, and the
-layout checks above still pass. The id list is read out of the app rather than
-duplicated here, so a new preset is swept without anyone remembering to extend
-the probe.
-
-The sweep runs at a fixed 390x844 touch viewport, deliberately *not* the first
-`--sizes` entry: a captured frame can only be compared to a reference captured at
-the same size, so the capture size has to be a constant rather than a function of
-the flags.
-
-A preset fails when the console reports an error, when its canvas is missing,
-has no WebGL context, or lost it, when the `Scene` chunk's Suspense fallback
-never clears, when an error boundary rendered, or when the `#p=` deep link did
-not actually switch the preset — the Presets menu marks the current id with
-`.checked`, and the sweep compares that against the id it asked for, so a sweep
-cannot pass by silently rendering the same preset thirteen times. Failed
-resource loads (the Google fonts, notably) are reported as info instead: they say
-what the network looked like, not whether the app is broken.
-
-### Reference frames (`scripts/probe-baselines/`)
-
-Every swept preset is also captured and compared against a committed reference
-frame, which is what catches a shader that compiles and mounts but no longer
-looks right: a black or blank frame, the wrong palette, a uniform that stopped
-being written. There is one JSON file per preset; each is 16 rows of 16 average
-cell colours, small and diffable on purpose.
-
-Three things make the comparison meaningful rather than flaky:
-
-- **The animation clock is virtual** for the sweep only: `performance.now()`
-  steps a fixed 200ms per animation frame and stops at exactly 12s. Every preset
-  drives `uTime` from `state.clock.elapsedTime`, which three reads from that same
-  value, and the analysis engine's envelopes advance off it too — on a real clock
-  both would sit wherever the machine happened to be, and two runs of identical
-  code would not match. The layout runs above stay on the real clock: an entrance
-  animation frozen mid-flight would move the very things they measure.
-- **The presets are driven with a fixed synthetic signal**, posted the way the
-  browser extension posts it. Four of them (`amPreset`, `am2Preset`, `waveform`,
-  `chromaticBurst`) draw nothing at all without one, so their references would be
-  black; playing a real file instead would leave every band-reactive preset at a
-  different point in the track on each run. The signal is a formula, not
-  randomness, and the level it produces is recorded in each reference file.
-- **It compares cell averages, not pixels.** CI has no GPU and renders through
-  SwiftShader; a developer's machine renders on real hardware. Per-pixel noise
-  lands differently between the two, the coarse structure lands the same way.
-
-A frame fails when more than 8% of cells are off by more than 12/255 in any
-channel. Measured on both renderers that allowance is currently dormant — no cell
-of any preset is past the 12/255 tolerance, the worst being `auroraSilk` at 9
-against the GPU-captured references and 1 on the GPU itself — so it is headroom
-for a driver other than the two measured rather than a fix for a case that
-exists. A thin high-contrast feature can land inside a cell on one driver and on
-its boundary on another, which reads as one large delta and nothing else. The
-reference frames were captured on a Radeon; `--software-gl` reruns the sweep on
-SwiftShader and is how that independence is checked.
-
-**A preset that rendered differently on different GPUs was fixed, not exempted.**
-`auroraSilk` measured 235 of its 256 cells differing by up to 175/255 between a
-GPU and SwiftShader, where every other preset is within 9. The cause was its
-noise hash: the familiar `fract(sin(dot(p, k)) * 43758.5453)` multiplies a
-`sin()` of an argument in the hundreds by ~4.4e4, and GL leaves the accuracy of
-`sin()` at large arguments to the implementation, so a range-reduction difference
-of a few units in the last place became a *different hash cell* — the noise field
-decorrelated and whole regions flipped across its smoke threshold. It now hashes
-without a sine, which every implementation evaluates identically, and the same
-measurement is 0 cells past tolerance. All 13 presets are compared.
-`RENDERER_SENSITIVE` in the probe is empty and kept, documented, as the escape
-hatch for a preset that genuinely cannot be made renderer-independent; it reports
-such a preset as *not compared* rather than counting it as covered.
-
-What it also cannot tell you: a change confined to a small part of the frame, or
-anything about motion. For an intended change of how a preset looks, run
-`npm run check:viewport -- --presets <id> --update-baselines`, then commit the
-regenerated file. A preset with no reference frame at all fails the run, so
-adding one means recording it.
-
-### Policy check (`--server pages`)
-
-`public/_headers` is not read by vite, not served by `--server preview` and not
-validated by anything else, so the shipped policy used to rest on a hand-run
-check. `--server pages` makes it automatic: it serves `dist/` in-process with the
-header rules from `public/_headers` applied, plus the SPA fallback Pages applies
-when the build has no `404.html`, and loads the app under that policy.
-
-Three assertions come out of that one load. The third is what makes the first two
-worth anything:
-
-- **the served policy is the policy that was written** — the response for `/`
-  has to carry exactly the `Content-Security-Policy` the file declares. Without
-  this, "no violations" would be reported just as happily by a file containing no
-  policy at all, since a page with no policy can never violate one.
-- **the load is clean** — any refusal Chrome reports is a failure, naming the
-  directive and the blocked URL. It has to be classified as a failure *before*
-  resource-load noise: the refusal for the Google font stylesheet contains
-  `fonts.googleapis.com`, so the noise pattern would otherwise swallow it.
-- **the detector works** — a deliberately blocked image and `fetch` are injected
-  and at least one refusal must come back, or the run fails saying the clean
-  result above proves nothing. Both are refused before any DNS lookup, so this
-  needs no network and cannot be confused with a host that merely fails to
-  resolve.
-
-The guards are checked against themselves, because a policy check that cannot
-fail is worse than none: with the font origin removed from `style-src` the run
-exits 1 naming `style-src 'self' 'unsafe-inline'` and the blocked stylesheet; with
-a rule pattern that does not cover `/` it exits 1 saying the declared policy does
-not apply there; with a policy permissive enough to allow the control's hosts it
-exits 1 saying it can no longer prove anything; and if the server stops applying
-the rules it read, it exits 1 on the mismatch between file and response.
-
-Options: `--server dev|preview|pages`, `--sizes WxH,WxH`, `--pointer touch|mouse|both`,
-`--presets all|none|id,id`, `--update-baselines`, `--software-gl`, `--json`,
-`--strict` (fail on info too), `--no-audio`. Set `CHROME_PATH` (or `CHROME_BIN`)
-if Chrome isn't in the usual place; otherwise it resolves one from `PATH`.
-
-CI runs it in the `viewport` job — GitHub's ubuntu runners ship Chrome, so
-nothing extra is installed — against the **built** bundle (`--server preview`)
-at 390x844, 844x390, 1024x768 and 1440x900, with both pointer types, sweeps
-every preset and compares all 13 reference frames — around three and a half
-minutes for the whole job on SwiftShader. A second step in the same job runs the
-policy check above (`--server pages --presets none`), and runs it *first*: it
-takes seconds, and a broken policy should not wait behind the sweep to be
-reported. Run it locally whenever you touch `src/styles/**`, a preset under
-`src/components/presets/`, `public/_headers`, or the narrow-viewport behaviour in
-`App.tsx`.
-
 ## Architecture
 
 ```
@@ -225,6 +71,8 @@ src/
   store.ts            zustand store; presets + UI prefs persist to localStorage
   queueIndex.ts       pure "what plays next" decision (shuffle/repeat/auto)
   audio.ts            local <audio> graph (AudioContext + analyser)
+  windowFocus.ts      focus/visibility predicate behind "pause when unfocused"
+  frameStats.ts       rendered frames per second, counted inside the canvas
   analyser/           FFT/DSP pipeline behind the shader uniforms
   spotify.ts          OAuth PKCE + Web API client (typed errors, dedup refresh)
   spotifyPlayer.ts    Web Playback SDK wrapper
@@ -246,6 +94,21 @@ Notes:
   onto the device and defers to Spotify's own queue while shuffle is on.
 - **Local playback** uses `queueIndex.ts` for every transition (buttons *and*
   track ends), so both paths honour the same modes.
+- **An unfocused window stops drawing.** `windowFocus.ts` parks the render
+  loop (`frameloop="never"`) and the analysis pipeline when the tab is hidden
+  or focus has been away for 250ms, and resumes on focus. Playback is untouched
+  — the local player is an `<audio>` element behind the Web Audio graph and
+  Spotify's runs in the SDK's iframe, so neither ever depended on the render
+  loop, and the shader clock keeps running so the visuals stay in step with the
+  audio. Tools → *Pause When Unfocused* turns it off (the setting persists).
+  The 250ms delay is what stops focus moving inside the page — into the Spotify
+  SDK's iframe, say — from flickering the scene off and on.
+- **The status bar's FPS is the renderer's own rate**, counted per drawn frame
+  inside the canvas (`frameStats.ts`). Measuring this page's
+  `requestAnimationFrame` instead — which is what it used to do — reports the
+  display's refresh rate no matter what the frame-rate cap is doing, so a cap of
+  30 still read as 60 and the cap looked inert. It reads 0 while the scene is
+  parked, which makes the status bar a way to see the pause working.
 - `Scene` and the debug overlay are lazily imported to keep three.js out of the
   first paint.
 
@@ -324,15 +187,84 @@ cover URLs the API hands out and that set changes:
   `Access-Control-Allow-Origin: *` and the preset sets `crossOrigin` — so the
   policy was the only thing in the way.
 
-`--server pages` is what holds this down: it serves `dist/` with the rules from
-this file and asserts the shipped policy (see **Policy check** under the
-responsive checks). Its assertions were exercised by breaking the policy on
-purpose, in each direction — see that section for what each break reports.
+### Policy check (`check:csp`)
 
-What that check still cannot reach is a path a probe run never takes: covers and
-the Web API need a Spotify login, and canvas playback needs a real track. The
-`media-src` rule above is exactly such a path, so it rests on the two
-measurements recorded here rather than on a test.
+Vite neither reads `_headers` nor sends it, so the policy that ships is invisible
+to the dev server, to `vite preview` and to every unit test. `npm run check:csp`
+is what covers it: it serves `dist/` in-process with the file's rules applied
+plus the SPA fallback Pages uses, then loads the app under that policy in Chrome.
+Run `npm run build` first. Four assertions come out of that one load, and the
+last is what makes the first three worth anything:
+
+- **the served policy is the policy written in the file** — the response for `/`
+  carries exactly the `Content-Security-Policy` the file declares, so "no
+  refusals" cannot be reported by a file that declares none.
+- **the load is clean** — any refusal is a failure naming the directive and the
+  blocked URL, classified *before* resource-load noise: the refusal for the
+  Google font stylesheet contains `fonts.googleapis.com`, so the noise pattern
+  would otherwise swallow the exact thing the check exists to catch.
+- **the app rendered** — a 404 or a blank document violates nothing, so "clean"
+  is not reported for a page that never loaded.
+- **the detector fires** — a deliberately blocked image and `fetch` are injected
+  and at least one refusal must come back, or the run fails saying the clean
+  result above proves nothing. Both are refused before any DNS lookup, so this
+  needs no network.
+
+The guards have been checked against themselves, because a policy check that
+cannot fail is worse than none: with the font origin removed from `style-src` the
+run exits 1 naming `style-src 'self' 'unsafe-inline'` and the blocked stylesheet,
+and with a rule pattern that stops covering `/` it exits 1 saying the declared
+policy does not apply there.
+
+What it cannot reach is a path a run never takes: covers and the Web API need a
+Spotify login, and canvas playback needs a real track. The `media-src` rule above
+is exactly such a path, so it rests on the two measurements recorded here rather
+than on a test.
+
+### Preset smoke pass (`check:presets`)
+
+`npm run check:presets` loads every id in `src/presets.ts` through its own `#p=`
+deep link in headless Chrome and reports whether each one mounted cleanly. It
+exists because a shader that fails to compile is invisible to everything else
+here: three.js reports GLSL compile and link failures with `console.error` and
+carries on drawing a black frame, so nothing throws, no error boundary fires, and
+no typecheck, lint or unit test can see it. The failure appears only on the
+device of whoever looks at that preset.
+
+Per preset it fails on an error boundary rendering, a canvas with no WebGL
+context, a lost context, a `.canvas-loading` fallback that never cleared, and any
+console error, uncaught exception or thrown error in the render loop. A failed
+resource load is reported and not failed — it says what this network looked like,
+not whether the preset is broken.
+
+The mount check alone is not enough, and the sweep would pass while rendering the
+same preset twelve times, so each run is confirmed against the Presets menu,
+which marks the current id with `.checked`. That is the anti-vacuity control: if
+no deep link can be confirmed, the run fails rather than reporting twelve clean
+mounts it cannot attribute. Each preset is also fed the same fixed synthetic
+spectrum, posted the way the browser extension posts it, because `amPreset`,
+`am2Preset`, `waveform` and `chromaticBurst` draw nothing at all without a signal
+and their shaders would go unexercised.
+
+**No reference frames.** This checks that a preset mounts and draws without
+error, never what it looks like, so a preset that compiles and draws the wrong
+thing — black, the wrong palette, frozen, ignoring its sliders — passes. Closing
+that needs a committed frame per preset and a comparison tolerant of
+renderer-to-renderer noise, which then has to be regenerated on every intended
+look change; that check existed here and was removed deliberately.
+
+Run `npm run build` first. `--presets=<id,id>` sweeps a subset (or `none`), and
+`--software-gl` renders through SwiftShader, which is how CI's renderer can be
+reproduced on a machine that has a GPU. Same shape as the policy check above:
+both serve `dist/` in-process from `scripts/lib/harness.mjs` and drive Chrome
+over the DevTools protocol, with no automation dependency.
+
+The guards have been checked against themselves the same way: a deliberate
+GLSL type error in one preset's fragment shader exits 1 quoting three's
+`THREE.WebGLProgram: Shader Error` and the failing line, while the next preset in
+the same run still passes; and with the `#p=` handling disabled the run exits 1
+saying the menu marks `mellow2` where the URL asked for `amPreset` — the failure
+the control exists to produce.
 
 ## Known limitations
 
