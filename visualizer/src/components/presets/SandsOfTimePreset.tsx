@@ -21,7 +21,12 @@ export default function SandsOfTimePreset() {
       uTime: { value: 0 }, uEnergy: { value: 0 }, uBass: { value: 0 },
       uMid: { value: 0 }, uHigh: { value: 0 }, uKick: { value: 0 }, uBeat: { value: 0 },
       uFlow: { value: 0 }, uCrawl: { value: 0 },
-      uBands: { value: [0, 0, 0, 0, 0, 0, 0] },
+      // Per-frame values the shader would otherwise derive for every pixel:
+      // the processed band energies, the bass/mid/high they aggregate into,
+      // the sway that rides on bass, the breath and the vocal strength.
+      uBandE: { value: [0, 0, 0, 0, 0, 0, 0] },
+      uBassP: { value: 0 }, uMidP: { value: 0 }, uHighP: { value: 0 },
+      uSway: { value: 1 }, uBreathe: { value: 1 }, uStrength: { value: 0 },
       uTreble: { value: 0 }, uHit: { value: 0 }, uLoud: { value: 0 }, uVocal: { value: 0 }, uSparkT: { value: 0 }, uPulse: { value: 0 },
       uSensitivity: { value: 1 }, uHueShift: { value: 200 }, uIntensity: { value: 1.5 },
       uComplexity: { value: 1 }, uAspect: { value: 1 },
@@ -30,7 +35,8 @@ export default function SandsOfTimePreset() {
     fragmentShader: `
       varying vec2 vUv;
       uniform float uTime,uEnergy,uBass,uMid,uHigh,uKick,uBeat,uFlow,uCrawl,uSensitivity,uHueShift,uIntensity,uComplexity,uAspect;
-      uniform float uBands[7];
+      uniform float uBandE[7];
+      uniform float uBassP,uMidP,uHighP,uSway,uBreathe,uStrength;
       uniform float uTreble,uHit,uLoud,uVocal,uSparkT,uPulse;
 
       vec3 hsv2rgb(vec3 c){
@@ -44,7 +50,8 @@ export default function SandsOfTimePreset() {
       float smoothField(vec2 p, float t){
         vec2 q = p;
         // large slow warp (diagonal drift) — bass sways width ±15%
-        float sway = 1.0 + pow(clamp(uBass, 0.0, 1.0), 2.2) * 0.15;
+        // (uniform: pow/clamp of a uniform is the same for every pixel)
+        float sway = uSway;
         q += 0.34 * sway * vec2(sin(p.y*1.15 + t*0.90),       sin(p.x*1.05 - t*0.70));
         // secondary meander
         q += 0.14 * sway * vec2(sin(p.y*2.30 - t*0.50 + 1.7), sin(p.x*2.05 + t*0.45));
@@ -130,14 +137,12 @@ export default function SandsOfTimePreset() {
         vec2 w = p / persp;
         w.y -= 0.12;
 
-        float bass=pow(clamp(uBass,0.0,1.0),2.2);
-        float mid =pow(clamp(uMid, 0.0,1.0),2.2);
-        float high=pow(clamp(uHigh,0.0,1.0),2.2);
+        // All three arrive processed (pow(clamp(x),2.2)), and the per-line band
+        // energies too: seven pow() calls that were identical for every pixel.
+        float bass=uBassP, mid=uMidP, high=uHighP;
 
         // per-line Hz: engine bands arrive normalized + enveloped.
         // contour id -> band; silent band = dim ghost (0.1), never gone.
-        float e[7];
-        for(int i=0;i<7;i++){ e[i]=pow(clamp(uBands[i],0.0,1.0),2.2); }
 
         // bass pushes outward instead of flashing: displace the sample point
         // radially, so lines shove away from center on heavy lows
@@ -153,7 +158,7 @@ export default function SandsOfTimePreset() {
         // energy breathes width/brightness a little; bass no longer flashes,
         // it pushes (see push above) instead
         float audio   = clamp(uEnergy, 0.0, 1.0)*0.6 + mid*0.15;
-        float breathe = 1.0 + audio*0.15 + sin(uTime*0.45)*0.025;
+        float breathe = uBreathe;
 
         float baseWidth = 0.012 + audio*0.002;
         float scale = 7.5 + uComplexity*0.70;
@@ -192,8 +197,8 @@ export default function SandsOfTimePreset() {
 
         // each line its own band (id from field, +3 offset so systems
         // never share). 0.1 floor: quiet lines ghost, audio lifts to full.
-        float eb1 = e[int(mod(floor(field*scale), 7.0))];
-        float eb2 = e[int(mod(floor((field*1.02 + 0.31)*scale*2.0) + 3.0, 7.0))];
+        float eb1 = uBandE[int(mod(floor(field*scale), 7.0))];
+        float eb2 = uBandE[int(mod(floor((field*1.02 + 0.31)*scale*2.0) + 3.0, 7.0))];
         float g1 = 0.1 + 0.9*smoothstep(0.02, 0.35, eb1);
         float g2 = 0.1 + 0.9*smoothstep(0.02, 0.35, eb2);
         s1c *= g1;
@@ -221,7 +226,7 @@ export default function SandsOfTimePreset() {
 
         // no fog: flat response, no top fade / vignette / center glow.
         // lines breathe up with the voice.
-        float strength = (0.45 + pow(uVocal, 1.5)*1.55) * breathe * bright;
+        float strength = uStrength * breathe * bright;
 
         col += ridge * lg * strength;
 
@@ -286,13 +291,13 @@ export default function SandsOfTimePreset() {
     // per-line Hz feed: engine bands are already normalized + enveloped.
     // JS follower (attack 6 / release 2.5, frame-rate independent) takes
     // the snap off: attacks soften, decays trail smoothly.
-    const arr = u.uBands.value as number[]
+    const arr = u.uBandE.value as number[]
     const eb = s.eb
     for (let i = 0; i < 7; i++) {
       const target = Math.min(a.bands[SAND_BAND_PICKS[i]] * sensitivity, 1)
       const rate = target > eb[i] ? 6 : 2.5
       eb[i] += (target - eb[i]) * (1 - Math.exp(-dt * rate))
-      arr[i] = eb[i]
+      arr[i] = Math.pow(Math.min(Math.max(eb[i], 0), 1), 2.2)
     }
 
     // integrated clocks: constant rate, phase never jumps.
@@ -320,6 +325,20 @@ export default function SandsOfTimePreset() {
     u.uIntensity.value = intensity
     u.uComplexity.value = complexity
     u.uAspect.value = viewport.width / viewport.height
+
+    // What the shader used to work out for every pixel, from the values just
+    // set above: pow(clamp(x),2.2) three times over, the sway that rides on
+    // bass, the breath, and the vocal strength.
+    const processed = (x: number) => Math.pow(Math.min(Math.max(x, 0), 1), 2.2)
+    const bassP = processed(u.uBass.value)
+    const midP = processed(u.uMid.value)
+    u.uBassP.value = bassP
+    u.uMidP.value = midP
+    u.uHighP.value = processed(u.uHigh.value)
+    u.uSway.value = 1 + bassP * 0.15
+    const audio = Math.min(Math.max(u.uEnergy.value, 0), 1) * 0.6 + midP * 0.15
+    u.uBreathe.value = 1 + audio * 0.15 + Math.sin(u.uTime.value * 0.45) * 0.025
+    u.uStrength.value = 0.45 + Math.pow(Math.min(Math.max(u.uVocal.value, 0), 1), 1.5) * 1.55
   })
 
   return (

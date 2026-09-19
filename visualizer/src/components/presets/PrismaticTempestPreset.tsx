@@ -3,6 +3,7 @@ import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useStore, presetParamsFor } from '../../store'
 import { getFreqData, getSampleRate } from '../../audio'
+import { fract } from './glsl'
 
 const edgeCache = new Map<string, number[]>()
 
@@ -56,17 +57,31 @@ export default function PrismaticTempestPreset() {
   const viewport = useThree((state) => state.viewport)
   const peaks = useRef(new Float64Array(7).fill(0.02))
   const rawBands = useMemo(() => new Array<number>(7).fill(0), [])
+  // The envelope-follower output, and the processed energies derived from it.
+  // Neither reaches the shader: the seven bands only ever feed the bass/mid/high
+  // aggregate below, so that is all the shader is given.
+  const envelope = useRef(new Float64Array(7))
+  const energies = useRef(new Float64Array(7))
 
   const shader = useMemo(() => ({
     uniforms: {
-      uTime: { value: 0 }, uBands: { value: [0, 0, 0, 0, 0, 0, 0] },
-      uSensitivity: { value: 1 }, uHueShift: { value: 200 }, uIntensity: { value: 1.5 },
+      uTime: { value: 0 },
+      uSensitivity: { value: 1 }, uIntensity: { value: 1.5 },
       uComplexity: { value: 1 }, uAspect: { value: 1 },
+      // The bass/mid/high the seven bands aggregate into, and the hue the
+      // lasers flow along — one value per frame each, not per pixel. See the
+      // fragment shader.
+      uAgg: { value: [0, 0, 0] },
+      uHueBase: { value: 0 },
     },
     vertexShader: 'varying vec2 vUv; void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
     fragmentShader: `
       varying vec2 vUv;
-      uniform float uTime,uBands[7],uSensitivity,uHueShift,uIntensity,uComplexity,uAspect;
+      uniform float uTime,uSensitivity,uIntensity,uComplexity,uAspect;
+      // Per-frame values, computed in the component: the bass/mid/high the
+      // seven bands aggregate into, and the lasers' hue along the beams.
+      uniform vec3 uAgg;
+      uniform float uHueBase;
 
       float hash(vec2 p){
         vec3 p3=fract(vec3(p.xyx)*0.1031);
@@ -94,13 +109,9 @@ export default function PrismaticTempestPreset() {
         vec2 p=(vUv-0.5)*2.0; p.x*=uAspect;
 
         // === 7 PROCESSED BANDS: smoothed, auto-gained, 0..1 ===
-        float e[7];
-        for(int i=0;i<7;i++){ e[i]=pow(clamp(uBands[i],0.0,1.0),2.2); }
-
-        // aggregate into bass / mid / high for the swirl behavior
-        float bass=(e[0]+e[1])*0.5;
-        float mid =(e[2]+e[3]+e[4])/3.0;
-        float high=(e[5]+e[6])*0.5;
+        // Arrive pre-processed: pow(clamp(band),2.2) is one value per band.
+        // bass / mid / high are the same aggregate for every pixel.
+        float bass=uAgg.x, mid=uAgg.y, high=uAgg.z;
 
         float t=uTime*0.12;
         float detail=1.8+uComplexity*0.9;
@@ -120,8 +131,9 @@ export default function PrismaticTempestPreset() {
         float th2=1.0-abs(2.0*f2-1.0);
         th2=pow(th2,10.0);
 
-        // rainbow hue flowing along the beams
-        float hue=fract(uHueShift/360.0+f*0.6+t*0.10);
+        // rainbow hue flowing along the beams: only the field's own term is
+        // per pixel, the hue shift and clock arrive folded in.
+        float hue=fract(uHueBase+f*0.6);
         vec3 laser1=hsv2rgb(vec3(hue,0.90,1.0));
         vec3 laser2=hsv2rgb(vec3(fract(hue+0.33),0.90,1.0));
 
@@ -155,15 +167,16 @@ export default function PrismaticTempestPreset() {
     const bands = readBands7(getFreqData(), rawBands)
     const { sensitivity, hueShift, intensity, speed, complexity } = presetParamsFor(useStore.getState())
     const u = materialRef.current.uniforms
-    u.uTime.value = state.clock.elapsedTime * speed
+    const time = state.clock.elapsedTime * speed
+    u.uTime.value = time
     u.uSensitivity.value = sensitivity
-    u.uHueShift.value = hueShift
     u.uIntensity.value = intensity
     u.uComplexity.value = complexity
     u.uAspect.value = viewport.width / viewport.height
 
-    const arr = u.uBands.value as number[]
+    const arr = envelope.current
     const pk = peaks.current
+    const bandE = energies.current
 
     // 1) auto-gain per band
     for (let i = 0; i < 7; i++) {
@@ -178,7 +191,16 @@ export default function PrismaticTempestPreset() {
         ? 1 - Math.exp(-dt * 16)
         : 1 - Math.exp(-dt * 4)
       arr[i] += (target - arr[i]) * k
+
+      // 4) what the shader would otherwise derive per pixel
+      bandE[i] = Math.pow(Math.min(Math.max(arr[i], 0), 1), 2.2)
     }
+
+    const agg = u.uAgg.value as number[]
+    agg[0] = (bandE[0] + bandE[1]) * 0.5
+    agg[1] = (bandE[2] + bandE[3] + bandE[4]) / 3
+    agg[2] = (bandE[5] + bandE[6]) * 0.5
+    u.uHueBase.value = fract(hueShift / 360 + time * 0.12 * 0.1)
   })
 
   return <mesh><planeGeometry args={[viewport.width, viewport.height]} /><shaderMaterial ref={materialRef} {...shader} /></mesh>
